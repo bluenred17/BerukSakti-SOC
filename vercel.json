@@ -1,6 +1,6 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/", "destination": "/google-search.html" }
+    { "source": "/", "destination": "/google-search" }
   ]
 }
