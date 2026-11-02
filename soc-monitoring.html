@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beruk Sakti Monitoring</title>
+<style>
+/* Layout: header + KPI row, then a card grid (volume wide, tactics + log health side by side, incidents wide) */
+/* Dark mode only, regardless of the system setting */
+:root {
+  --bg: #070b12;
+  --panel: rgba(17, 25, 36, .58);
+  --panel-solid: #111924;
+  --glow-cyan: rgba(34, 211, 238, .14);
+  --glow-indigo: rgba(99, 102, 241, .16);
+  --grid-line: rgba(94, 160, 220, .06);
+  --node: 110, 190, 255;
+  --fg: #e4eaf0;
+  --muted: #8d9cac;
+  --line: #233040;
+  --accent: #5b9de0;
+  --muted-bar: #435365;
+  --grid: #1c2632;
+  --axis: #364557;
+  --ok: #4cc287;
+  --warn: #e8a640;
+  --bad: #f06a6a;
+  --critical: #ef5b5b;
+  --high: #e8a640;
+  --popover: #1b2531;
+  --shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  --sans: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  --radius: 8px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--fg);
+  font: 14px/1.5 var(--sans);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(60rem 40rem at 85% -10%, var(--glow-indigo), transparent 60%),
+    radial-gradient(50rem 36rem at -5% 110%, var(--glow-cyan), transparent 60%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: auto, auto, 40px 40px, 40px 40px;
+  background-attachment: fixed;
+}
+/* Live threat map drawn behind the content */
+#bg-map {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+/* Slow radar-style scan line */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: 160px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(34, 211, 238, .05) 70%, rgba(34, 211, 238, .12) 99%, transparent);
+  transform: translateY(-160px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  body::after { animation: soc-scan 9s linear infinite; }
+}
+@keyframes soc-scan {
+  to { transform: translateY(100vh); }
+}
+.soc {
+  position: relative;
+  z-index: 1;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-block: 28px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.soc-head { display: flex; flex-direction: column; gap: 4px; }
+.soc-title { margin: 0; font-family: var(--serif); font-weight: 400; font-size: 30px; line-height: 1.2; text-wrap: balance; }
+.soc-lede { margin: 0; font-size: 15px; max-width: 72ch; }
+.soc-lede b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.soc-note { margin: 0; color: var(--muted); font-size: 12px; }
+.soc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr)); gap: 12px; }
+.soc-tile, .soc-card { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); box-shadow: inset 0 1px 0 rgba(140, 200, 255, .06); }
+.soc-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; }
+.soc-tile-label { font-size: 12px; color: var(--muted); }
+.soc-tile-value { font-family: var(--serif); font-size: 30px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.soc-unit { margin-left: .2em; font-family: var(--sans); font-size: 14px; color: var(--muted); }
+.soc-tile-sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.soc-tile-sub b { font-weight: 600; }
+.soc-good { color: var(--ok); }
+.soc-bad { color: var(--bad); }
+.soc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 12px; }
+.soc-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+.soc-wide { grid-column: 1 / -1; }
+.soc-card h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.soc-card-note { margin: 0; color: var(--muted); font-size: 12px; }
+.soc-chart { position: relative; min-height: 260px; }
+.soc-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.soc-legend li { display: flex; align-items: center; gap: 6px; }
+.soc-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.soc-axis { font-family: var(--sans); font-size: 12px; fill: var(--muted); }
+.soc-tip { position: absolute; z-index: 2; pointer-events: none; min-width: 9rem; background: var(--popover); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 6px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.soc-tip-head { color: var(--muted); margin-bottom: 2px; }
+.soc-tip-row { display: flex; align-items: center; gap: 6px; }
+.soc-tip-row span:last-child { margin-left: auto; padding-left: 12px; }
+.soc-tip-total { border-top: 1px solid var(--line); margin-top: 3px; padding-top: 3px; font-weight: 600; }
+.soc-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.soc-search { flex: 1 1 14rem; max-width: 22rem; min-width: 0; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
+.soc-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.soc-tablewrap { overflow: auto; max-height: 28rem; }
+.soc-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.soc-table th { position: sticky; top: 0; z-index: 1; background: var(--panel-solid); text-align: left; white-space: nowrap; font-weight: 600; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); padding: 6px 8px; }
+.soc-table th button { all: unset; cursor: pointer; }
+.soc-table th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.soc-table th[aria-sort="ascending"] button::after { content: " \2191"; }
+.soc-table th[aria-sort="descending"] button::after { content: " \2193"; }
+.soc-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.soc-table .soc-num { text-align: right; white-space: nowrap; }
+.soc-mono { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.soc-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; font-size: 12px; }
+.soc-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip-critical, .st-down { color: var(--bad); }
+.chip-high, .st-delayed { color: var(--warn); }
+.chip-medium { color: var(--fg); }
+.chip-low { color: var(--muted); }
+.st-healthy { color: var(--ok); }
+@media (max-width: 640px) {
+  .soc-opt { display: none; }
+  .soc-title { font-size: 26px; }
+}
+</style>
+</head>
+<body>
+<canvas id="bg-map" aria-hidden="true"></canvas>
+<div class="soc">
+  <header class="soc-head">
+    <h1 class="soc-title">Beruk Sakti Monitoring</h1>
+    <p class="soc-lede"><b id="lede-crit">—</b> insiden kritis masih terbuka, volume alert hari ini <b id="lede-vs">—</b> dibanding rata-rata 13 hari sebelumnya, dan <b id="lede-down">—</b> sumber log berhenti mengirim data.</p>
+    <p class="soc-note">Data contoh untuk ilustrasi, per 2 November 2026. Angka di halaman ini bukan data SIEM asli.</p>
+  </header>
+
+  <div class="soc-tiles">
+    <div class="soc-tile">
+      <span class="soc-tile-label">Insiden terbuka</span>
+      <span class="soc-tile-value" id="t-open">—</span>
+      <span class="soc-tile-sub"><b id="t-unassigned">—</b> belum ditugaskan</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Alert hari ini</span>
+      <span class="soc-tile-value" id="t-today">—</span>
+      <span class="soc-tile-sub"><b id="t-today-d">—</b> vs rata-rata 13 hari</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">MTTD, 7 hari terakhir</span>
+      <span class="soc-tile-value"><span id="t-mttd">—</span><span class="soc-unit">mnt</span></span>
+      <span class="soc-tile-sub"><b id="t-mttd-d">—</b> vs 7 hari sebelumnya</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">MTTR, 7 hari terakhir</span>
+      <span class="soc-tile-value"><span id="t-mttr">—</span><span class="soc-unit">jam</span></span>
+      <span class="soc-tile-sub"><b id="t-mttr-d">—</b> vs 7 hari sebelumnya</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">False positive rate</span>
+      <span class="soc-tile-value" id="t-fp">—</span>
+      <span class="soc-tile-sub"><b id="t-fp-d">—</b> vs 7 hari sebelumnya</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Sumber log sehat</span>
+      <span class="soc-tile-value"><span id="t-healthy">—</span><span class="soc-unit">dari <span id="t-total">—</span></span></span>
+      <span class="soc-tile-sub"><b id="t-delayed">—</b> terlambat · <b id="t-down">—</b> mati</span>
+    </div>
+  </div>
+
+  <div class="soc-grid">
+    <section class="soc-card soc-wide">
+      <h2>Volume alert per hari</h2>
+      <p class="soc-card-note">14 hari terakhir, ditumpuk menurut severity. Arahkan kursor ke batang untuk rinciannya.</p>
+      <ul class="soc-legend">
+        <li><span class="soc-sw" style="background:var(--critical)"></span>Critical</li>
+        <li><span class="soc-sw" style="background:var(--high)"></span>High</li>
+        <li><span class="soc-sw" style="background:var(--accent)"></span>Medium</li>
+        <li><span class="soc-sw" style="background:var(--muted-bar)"></span>Low</li>
+      </ul>
+      <div class="soc-chart" id="chart-volume"></div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Alert per taktik MITRE ATT&amp;CK</h2>
+      <p class="soc-card-note">7 hari terakhir. Tiga taktik terbanyak disorot.</p>
+      <div class="soc-chart" id="chart-tactics" style="min-height:272px"></div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Kesehatan sumber log</h2>
+      <p class="soc-card-note">Event per detik (EPS) dan kapan event terakhir diterima SIEM.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Sumber</th>
+            <th class="soc-opt">Tipe</th>
+            <th class="soc-num">EPS</th>
+            <th class="soc-num">Terakhir terlihat</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody id="tb-logs"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Insiden aktif</h2>
+      <p class="soc-card-note">Semua insiden yang belum ditutup. Klik judul kolom untuk mengurutkan; waktu dalam UTC.</p>
+      <div class="soc-tools">
+        <input id="soc-search" class="soc-search" type="search" placeholder="Cari ID, judul, aset, taktik…" aria-label="Cari insiden">
+      </div>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th aria-sort="none"><button type="button" data-sort="id">ID</button></th>
+            <th aria-sort="descending"><button type="button" data-sort="opened">Dibuka</button></th>
+            <th aria-sort="none"><button type="button" data-sort="severity">Severity</button></th>
+            <th aria-sort="none"><button type="button" data-sort="title">Judul</button></th>
+            <th class="soc-opt" aria-sort="none"><button type="button" data-sort="tactic">Taktik</button></th>
+            <th class="soc-opt" aria-sort="none"><button type="button" data-sort="asset">Aset</button></th>
+            <th aria-sort="none"><button type="button" data-sort="status">Status</button></th>
+            <th class="soc-opt" aria-sort="none"><button type="button" data-sort="queue">Antrean</button></th>
+          </tr></thead>
+          <tbody id="tb-incidents"></tbody>
+        </table>
+      </div>
+      <p class="soc-card-note" id="soc-nomatch" hidden>Tidak ada insiden yang cocok dengan pencarian.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+// ---- Data contoh (ganti dengan data SIEM Anda) ----
+const DATA = {
+  alerts_daily: [
+    {day: '2026-10-20', critical: 2, high: 18, medium: 140, low: 610},
+    {day: '2026-10-21', critical: 1, high: 22, medium: 152, low: 640},
+    {day: '2026-10-22', critical: 3, high: 19, medium: 138, low: 598},
+    {day: '2026-10-23', critical: 2, high: 25, medium: 160, low: 655},
+    {day: '2026-10-24', critical: 1, high: 14, medium: 120, low: 520},
+    {day: '2026-10-25', critical: 0, high: 9, medium: 88, low: 410},
+    {day: '2026-10-26', critical: 1, high: 11, medium: 92, low: 430},
+    {day: '2026-10-27', critical: 2, high: 21, medium: 149, low: 632},
+    {day: '2026-10-28', critical: 4, high: 27, medium: 171, low: 668},
+    {day: '2026-10-29', critical: 3, high: 24, medium: 158, low: 644},
+    {day: '2026-10-30', critical: 5, high: 31, medium: 182, low: 701},
+    {day: '2026-10-31', critical: 2, high: 16, medium: 126, low: 540},
+    {day: '2026-11-01', critical: 1, high: 12, medium: 98, low: 452},
+    {day: '2026-11-02', critical: 6, high: 38, medium: 214, low: 1026},
+  ],
+  alerts_by_tactic: [
+    {tactic_id: 'TA0001', tactic: 'Initial Access', alerts: 412},
+    {tactic_id: 'TA0002', tactic: 'Execution', alerts: 286},
+    {tactic_id: 'TA0003', tactic: 'Persistence', alerts: 174},
+    {tactic_id: 'TA0004', tactic: 'Privilege Escalation', alerts: 98},
+    {tactic_id: 'TA0005', tactic: 'Defense Evasion', alerts: 231},
+    {tactic_id: 'TA0006', tactic: 'Credential Access', alerts: 356},
+    {tactic_id: 'TA0007', tactic: 'Discovery', alerts: 302},
+    {tactic_id: 'TA0008', tactic: 'Lateral Movement', alerts: 77},
+    {tactic_id: 'TA0011', tactic: 'Command and Control', alerts: 143},
+    {tactic_id: 'TA0010', tactic: 'Exfiltration', alerts: 21},
+    {tactic_id: 'TA0040', tactic: 'Impact', alerts: 12},
+  ],
+  incidents: [
+    {id: 'INC-2611-041', opened: '2026-11-02T08:14:00Z', severity: 'Critical', title: 'Cobalt Strike beacon detected', tactic: 'TA0011 Command and Control', asset: 'FIN-WS-0231', status: 'Investigating', queue: 'Tier 2'},
+    {id: 'INC-2611-040', opened: '2026-11-02T07:52:00Z', severity: 'Critical', title: 'Impossible travel and MFA fatigue on admin account', tactic: 'TA0006 Credential Access', asset: 'Entra ID', status: 'Open', queue: 'Unassigned'},
+    {id: 'INC-2611-039', opened: '2026-11-02T06:30:00Z', severity: 'Critical', title: 'Mass SMB authentication failures', tactic: 'TA0008 Lateral Movement', asset: 'DC-02', status: 'Investigating', queue: 'Tier 3'},
+    {id: 'INC-2611-038', opened: '2026-11-02T05:11:00Z', severity: 'High', title: 'Credential phishing lure sent to 46 users', tactic: 'TA0001 Initial Access', asset: 'Email gateway', status: 'Contained', queue: 'Tier 1'},
+    {id: 'INC-2611-037', opened: '2026-11-01T22:47:00Z', severity: 'High', title: 'Encoded PowerShell command execution', tactic: 'TA0002 Execution', asset: 'HR-LT-0118', status: 'Investigating', queue: 'Tier 2'},
+    {id: 'INC-2611-036', opened: '2026-11-01T19:05:00Z', severity: 'High', title: 'New scheduled task for persistence', tactic: 'TA0003 Persistence', asset: 'APP-SRV-07', status: 'Open', queue: 'Tier 1'},
+    {id: 'INC-2610-035', opened: '2026-10-31T14:20:00Z', severity: 'High', title: '2.1 GB outbound to unknown cloud storage', tactic: 'TA0010 Exfiltration', asset: 'FS-01', status: 'Contained', queue: 'Tier 3'},
+    {id: 'INC-2610-034', opened: '2026-10-31T09:42:00Z', severity: 'Medium', title: 'Internal port scan', tactic: 'TA0007 Discovery', asset: '10.20.4.17', status: 'Open', queue: 'Tier 1'},
+    {id: 'INC-2610-033', opened: '2026-10-30T16:03:00Z', severity: 'Medium', title: 'Real-time AV protection disabled', tactic: 'TA0005 Defense Evasion', asset: 'SALES-LT-0092', status: 'Investigating', queue: 'Tier 1'},
+    {id: 'INC-2610-032', opened: '2026-10-30T11:28:00Z', severity: 'Medium', title: 'SQL injection attempts on /api/login', tactic: 'TA0001 Initial Access', asset: 'WEB-PROD-01', status: 'Contained', queue: 'Tier 1'},
+    {id: 'INC-2610-031', opened: '2026-10-29T08:55:00Z', severity: 'Low', title: 'VPN portal brute force (blocked)', tactic: 'TA0006 Credential Access', asset: 'VPN-GW', status: 'Open', queue: 'Unassigned'},
+    {id: 'INC-2610-030', opened: '2026-10-28T13:40:00Z', severity: 'Low', title: 'Unsigned driver loaded', tactic: 'TA0004 Privilege Escalation', asset: 'DEV-WS-0044', status: 'Open', queue: 'Tier 1'},
+  ],
+  kpis: {
+    mttd_min: {value: 18, prev: 24},
+    mttr_hours: {value: 4.6, prev: 5.2},
+    fp_rate: {value: 0.31, prev: 0.36},
+  },
+  log_sources: [
+    {source: 'Perimeter firewall', type: 'Firewall', eps: 4820, last_seen_min: 0, status: 'Healthy'},
+    {source: 'Windows Security events', type: 'Endpoint', eps: 3970, last_seen_min: 0, status: 'Healthy'},
+    {source: 'EDR telemetry', type: 'EDR', eps: 1310, last_seen_min: 0, status: 'Healthy'},
+    {source: 'Network IDS', type: 'IDS', eps: 1150, last_seen_min: 14, status: 'Delayed'},
+    {source: 'Web application firewall', type: 'WAF', eps: 880, last_seen_min: 0, status: 'Healthy'},
+    {source: 'Identity provider sign-ins', type: 'Identity', eps: 640, last_seen_min: 1, status: 'Healthy'},
+    {source: 'Email gateway', type: 'Email', eps: 210, last_seen_min: 2, status: 'Healthy'},
+    {source: 'Cloud audit trail', type: 'Cloud', eps: 95, last_seen_min: 3, status: 'Healthy'},
+    {source: 'Linux auditd', type: 'Endpoint', eps: 0, last_seen_min: 187, status: 'Down'},
+  ],
+};
+
+// ---- Helpers ----
+const KEYS = ['critical', 'high', 'medium', 'low'];
+const SEV_LABEL = {critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low'};
+const SEV = {critical: 'var(--critical)', high: 'var(--high)', medium: 'var(--accent)', low: 'var(--muted-bar)'};
+const SEV_RANK = {Critical: 0, High: 1, Medium: 2, Low: 3};
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
+const fmtPct = (v, d = 0) => (v * 100).toFixed(d) + '%';
+const fmtDay = (date) => date.toLocaleDateString('id-ID', {day: 'numeric', month: 'short', timeZone: 'UTC'});
+const fmtLong = (date) => date.toLocaleDateString('id-ID', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'});
+const fmtOpened = (date) => fmtDay(date) + ', ' + date.toISOString().slice(11, 16);
+const $ = (id) => document.getElementById(id);
+
+function svgEl(tag, attrs, parent) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(el);
+  return el;
+}
+
+function niceTicks(max, count = 5) {
+  const raw = max / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+  const top = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let t = 0; t <= top + 1e-9; t += step) ticks.push(t);
+  return ticks;
+}
+
+function setDelta(el, v) {
+  el.classList.remove('soc-good', 'soc-bad');
+  if (v !== 0) el.classList.add(v < 0 ? 'soc-good' : 'soc-bad');
+  el.textContent = (v > 0 ? '▲ +' : v < 0 ? '▼ ' : '') + fmtPct(v);
+}
+
+function makeTip(box) {
+  const t = document.createElement('div');
+  t.className = 'soc-tip';
+  t.hidden = true;
+  box.appendChild(t);
+  return t;
+}
+
+function placeTip(box, t, px, py) {
+  t.hidden = false;
+  const w = t.offsetWidth;
+  const h = t.offsetHeight;
+  let left = px + 14;
+  if (left + w > box.clientWidth) left = px - w - 14;
+  t.style.left = Math.max(0, left) + 'px';
+  t.style.top = Math.max(0, Math.min(box.clientHeight - h, py - h / 2)) + 'px';
+}
+
+function tipHead(t, text) {
+  t.replaceChildren();
+  const h = document.createElement('div');
+  h.className = 'soc-tip-head';
+  h.textContent = text;
+  t.appendChild(h);
+}
+
+function tipRow(t, color, name, value, cls) {
+  const row = document.createElement('div');
+  row.className = 'soc-tip-row' + (cls ? ' ' + cls : '');
+  if (color) {
+    const sw = document.createElement('span');
+    sw.className = 'soc-sw';
+    sw.style.background = color;
+    row.appendChild(sw);
+  }
+  const n = document.createElement('span');
+  n.textContent = name;
+  const v = document.createElement('span');
+  v.textContent = value;
+  row.append(n, v);
+  t.appendChild(row);
+}
+
+function pointer(ev, box) {
+  const r = box.getBoundingClientRect();
+  return [ev.clientX - r.left, ev.clientY - r.top];
+}
+
+// ---- Derived figures ----
+const days = DATA.alerts_daily.map((r) => {
+  const o = {...r, date: new Date(r.day + 'T00:00:00Z')};
+  o.total = KEYS.reduce((s, k) => s + o[k], 0);
+  return o;
+}).sort((a, b) => a.date - b.date);
+const today = days[days.length - 1];
+const prior = days.slice(0, -1);
+const avgPrior = prior.reduce((s, r) => s + r.total, 0) / prior.length;
+const vsAvg = (today.total - avgPrior) / avgPrior;
+
+const openInc = DATA.incidents.filter((i) => i.status !== 'Resolved' && i.status !== 'Closed');
+const critOpen = openInc.filter((i) => i.severity === 'Critical').length;
+const unassigned = openInc.filter((i) => i.queue === 'Unassigned').length;
+
+const logs = DATA.log_sources;
+const healthy = logs.filter((s) => s.status === 'Healthy').length;
+const delayed = logs.filter((s) => s.status === 'Delayed').length;
+const down = logs.filter((s) => s.status === 'Down').length;
+const kd = (k) => (DATA.kpis[k].value - DATA.kpis[k].prev) / DATA.kpis[k].prev;
+
+// ---- Header and tiles ----
+$('lede-crit').textContent = fmtInt(critOpen);
+setDelta($('lede-vs'), vsAvg);
+$('lede-down').textContent = fmtInt(down);
+$('t-open').textContent = fmtInt(openInc.length);
+$('t-unassigned').textContent = fmtInt(unassigned);
+$('t-today').textContent = fmtInt(today.total);
+setDelta($('t-today-d'), vsAvg);
+$('t-mttd').textContent = fmtInt(DATA.kpis.mttd_min.value);
+setDelta($('t-mttd-d'), kd('mttd_min'));
+$('t-mttr').textContent = DATA.kpis.mttr_hours.value.toFixed(1);
+setDelta($('t-mttr-d'), kd('mttr_hours'));
+$('t-fp').textContent = fmtPct(DATA.kpis.fp_rate.value);
+setDelta($('t-fp-d'), kd('fp_rate'));
+$('t-healthy').textContent = fmtInt(healthy);
+$('t-total').textContent = fmtInt(logs.length);
+$('t-delayed').textContent = fmtInt(delayed);
+$('t-down').textContent = fmtInt(down);
+
+// ---- Alert volume chart ----
+function drawVolume() {
+  const box = $('chart-volume');
+  const W = Math.max(280, box.clientWidth);
+  const H = 260;
+  const svg = svgEl('svg', {width: '100%', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Volume alert per hari menurut severity'});
+  box.replaceChildren(svg);
+
+  const ticks = niceTicks(Math.max(...days.map((r) => r.total)));
+  const top = ticks[ticks.length - 1];
+  const probe = svgEl('g', {class: 'soc-axis'}, svg);
+  let ml = 0;
+  ticks.forEach((t) => {
+    const tx = svgEl('text', {}, probe);
+    tx.textContent = fmtInt(t);
+    ml = Math.max(ml, tx.getComputedTextLength());
+  });
+  probe.remove();
+
+  const m = {t: 8, r: 4, b: 26, l: ml + 10};
+  const y = (v) => H - m.b - (v / top) * (H - m.b - m.t);
+  const step = (W - m.l - m.r) / days.length;
+  const band = step * 0.72;
+  const bw = Math.min(32, band);
+  const xc = (i) => m.l + step * i + step / 2;
+
+  const grid = svgEl('g', {}, svg);
+  const axis = svgEl('g', {class: 'soc-axis'}, svg);
+  ticks.forEach((t) => {
+    svgEl('line', {x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), style: `stroke:${t === 0 ? 'var(--axis)' : 'var(--grid)'}`}, grid);
+    const tx = svgEl('text', {x: m.l - 8, y: y(t), dy: '0.32em', 'text-anchor': 'end'}, axis);
+    tx.textContent = fmtInt(t);
+  });
+
+  const every = Math.max(1, Math.ceil(52 / step));
+  days.forEach((r, i) => {
+    if ((days.length - 1 - i) % every !== 0) return;
+    const tx = svgEl('text', {x: xc(i), y: H - 8, 'text-anchor': 'middle'}, axis);
+    tx.textContent = fmtDay(r.date);
+  });
+
+  const cols = days.map((r, i) => {
+    const g = svgEl('g', {}, svg);
+    let base = 0;
+    KEYS.forEach((k) => {
+      const h = y(base) - y(base + r[k]);
+      svgEl('rect', {x: xc(i) - bw / 2, width: bw, y: y(base + r[k]), height: Math.max(0, h), rx: 1, style: `fill:${SEV[k]}`}, g);
+      base += r[k];
+    });
+    return g;
+  });
+
+  const tip = makeTip(box);
+  days.forEach((r, i) => {
+    const hit = svgEl('rect', {x: m.l + step * i, width: step, y: m.t, height: H - m.b - m.t, style: 'fill:transparent'}, svg);
+    const show = (ev) => {
+      cols.forEach((g, j) => { g.style.opacity = j === i ? 1 : 0.4; });
+      tipHead(tip, fmtLong(r.date));
+      KEYS.forEach((k) => tipRow(tip, SEV[k], SEV_LABEL[k], fmtInt(r[k])));
+      tipRow(tip, null, 'Total', fmtInt(r.total), 'soc-tip-total');
+      placeTip(box, tip, pointer(ev, box)[0], y(r.total) + 20);
+    };
+    hit.addEventListener('pointerenter', show);
+    hit.addEventListener('pointermove', show);
+    hit.addEventListener('pointerleave', () => {
+      cols.forEach((g) => { g.style.opacity = 1; });
+      tip.hidden = true;
+    });
+  });
+}
+
+// ---- MITRE tactics chart ----
+function drawTactics() {
+  const box = $('chart-tactics');
+  const rows = DATA.alerts_by_tactic.map((r) => ({id: r.tactic_id, name: r.tactic, n: r.alerts})).sort((a, b) => b.n - a.n);
+  const sum = rows.reduce((s, r) => s + r.n, 0);
+  const max = rows[0].n;
+  const W = Math.max(260, box.clientWidth);
+  const rowH = 24;
+  const H = rows.length * rowH + 8;
+  const svg = svgEl('svg', {width: '100%', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Jumlah alert per taktik MITRE ATT&CK'});
+  box.replaceChildren(svg);
+
+  const probe = svgEl('g', {class: 'soc-axis'}, svg);
+  let ml = 0;
+  let mr = 0;
+  rows.forEach((r) => {
+    const a = svgEl('text', {}, probe);
+    a.textContent = r.name;
+    ml = Math.max(ml, a.getComputedTextLength());
+    const b = svgEl('text', {}, probe);
+    b.textContent = fmtInt(r.n);
+    mr = Math.max(mr, b.getComputedTextLength());
+  });
+  probe.remove();
+  ml = Math.min(ml, W * 0.45);
+  const x0 = ml + 10;
+  const x = (v) => x0 + (v / max) * (W - mr - 8 - x0);
+
+  const tip = makeTip(box);
+  const groups = rows.map((r, i) => {
+    const g = svgEl('g', {transform: `translate(0,${4 + i * rowH})`}, svg);
+    svgEl('rect', {x: x0, y: 5, height: 14, rx: 2, width: Math.max(1, x(r.n) - x0), style: `fill:${i < 3 ? 'var(--accent)' : 'var(--muted-bar)'}`}, g);
+    const lab = svgEl('text', {class: 'soc-axis', x: ml, y: 12, dy: '0.32em', 'text-anchor': 'end'}, g);
+    lab.textContent = r.name;
+    const val = svgEl('text', {class: 'soc-axis', x: x(r.n) + 6, y: 12, dy: '0.32em'}, g);
+    val.textContent = fmtInt(r.n);
+    const hit = svgEl('rect', {x: 0, width: W, height: rowH, style: 'fill:transparent'}, g);
+    const show = (ev) => {
+      groups.forEach((o, j) => { o.style.opacity = j === i ? 1 : 0.45; });
+      tipHead(tip, r.id);
+      tipRow(tip, null, r.name, fmtInt(r.n) + ' alert');
+      tipRow(tip, null, 'Porsi dari total', fmtPct(r.n / sum, 1));
+      const [px, py] = pointer(ev, box);
+      placeTip(box, tip, px, py);
+    };
+    hit.addEventListener('pointerenter', show);
+    hit.addEventListener('pointermove', show);
+    hit.addEventListener('pointerleave', () => {
+      groups.forEach((o) => { o.style.opacity = 1; });
+      tip.hidden = true;
+    });
+    return g;
+  });
+}
+
+// ---- Tables ----
+function td(tr, text, cls) {
+  const c = document.createElement('td');
+  if (cls) c.className = cls;
+  c.textContent = text;
+  tr.appendChild(c);
+}
+
+function chip(tr, text, cls) {
+  const c = document.createElement('td');
+  const s = document.createElement('span');
+  s.className = 'soc-chip ' + cls;
+  s.textContent = text;
+  c.appendChild(s);
+  tr.appendChild(c);
+}
+
+function ago(m) {
+  if (m < 1) return 'baru saja';
+  if (m < 60) return m + ' mnt lalu';
+  return Math.floor(m / 60) + ' j ' + (m % 60) + ' mnt lalu';
+}
+
+function drawLogs() {
+  const tb = $('tb-logs');
+  const order = {Down: 0, Delayed: 1, Healthy: 2};
+  tb.replaceChildren();
+  [...logs].sort((a, b) => (order[a.status] - order[b.status]) || (b.eps - a.eps)).forEach((r) => {
+    const tr = document.createElement('tr');
+    td(tr, r.source);
+    td(tr, r.type, 'soc-opt');
+    td(tr, fmtInt(r.eps), 'soc-num');
+    td(tr, ago(r.last_seen_min), 'soc-num');
+    chip(tr, r.status, 'st-' + r.status.toLowerCase());
+    tb.appendChild(tr);
+  });
+}
+
+let sortKey = 'opened';
+let sortDir = -1;
+
+function drawIncidents() {
+  const tb = $('tb-incidents');
+  const q = $('soc-search').value.trim().toLowerCase();
+  const rows = openInc.filter((i) => !q || [i.id, i.title, i.asset, i.tactic, i.severity, i.status, i.queue].join(' ').toLowerCase().includes(q));
+  const val = (r) => (sortKey === 'severity' ? SEV_RANK[r.severity] : String(r[sortKey]));
+  rows.sort((a, b) => {
+    const va = val(a);
+    const vb = val(b);
+    return (va < vb ? -1 : va > vb ? 1 : 0) * sortDir;
+  });
+  tb.replaceChildren();
+  rows.forEach((r) => {
+    const tr = document.createElement('tr');
+    td(tr, r.id, 'soc-mono');
+    td(tr, fmtOpened(new Date(r.opened)), 'soc-num');
+    chip(tr, r.severity, 'chip-' + r.severity.toLowerCase());
+    td(tr, r.title);
+    td(tr, r.tactic, 'soc-opt');
+    td(tr, r.asset, 'soc-opt soc-mono');
+    td(tr, r.status);
+    td(tr, r.queue, 'soc-opt');
+    tb.appendChild(tr);
+  });
+  $('soc-nomatch').hidden = !(q && rows.length === 0);
+}
+
+document.querySelectorAll('[data-sort]').forEach((b) => b.addEventListener('click', () => {
+  const k = b.dataset.sort;
+  if (sortKey === k) sortDir = -sortDir;
+  else { sortKey = k; sortDir = k === 'opened' ? -1 : 1; }
+  document.querySelectorAll('[data-sort]').forEach((o) => {
+    o.closest('th').setAttribute('aria-sort', o.dataset.sort === sortKey ? (sortDir > 0 ? 'ascending' : 'descending') : 'none');
+  });
+  drawIncidents();
+}));
+$('soc-search').addEventListener('input', drawIncidents);
+
+function drawCharts() { drawVolume(); drawTactics(); }
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawCharts, 120); });
+
+drawCharts();
+drawLogs();
+drawIncidents();
+
+// ---- Background: live threat map (dotted world map + animated attack arcs) ----
+(function threatMap() {
+  const cv = $('bg-map');
+  const ctx = cv.getContext('2d');
+  const rgb = getComputedStyle(document.documentElement).getPropertyValue('--node').trim();
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Rough land outlines as [lon, lat]; shown as dots, so the low detail is hidden.
+  const LAND = [
+    [[-168,66],[-162,70],[-140,70],[-125,70],[-95,72],[-80,73],[-65,62],[-55,52],[-66,45],[-70,42],[-76,35],[-81,31],[-80,25],[-82,28],[-84,30],[-90,29],[-97,26],[-97,22],[-92,18],[-87,21],[-88,16],[-83,10],[-79,8],[-80,7],[-85,11],[-92,14],[-105,20],[-110,24],[-112,30],[-117,32],[-122,37],[-124,42],[-124,48],[-130,54],[-140,59],[-150,60],[-158,57],[-165,60]],
+    [[-55,60],[-44,60],[-20,70],[-18,77],[-30,83],[-60,82],[-70,77],[-55,70]],
+    [[-80,8],[-72,12],[-62,11],[-52,5],[-35,-5],[-39,-15],[-48,-26],[-58,-35],[-65,-42],[-68,-52],[-74,-52],[-73,-40],[-71,-30],[-70,-18],[-76,-14],[-81,-5],[-80,0],[-78,7]],
+    [[-10,36],[-9,43],[-2,44],[-5,48],[2,51],[8,54],[8,57],[5,62],[12,66],[20,70],[30,71],[40,68],[45,66],[60,68],[60,55],[50,47],[40,45],[36,41],[28,41],[26,38],[22,37],[20,40],[16,38],[12,44],[8,44],[3,43],[0,39],[-5,36]],
+    [[26,41],[36,36],[35,32],[43,13],[52,16],[57,23],[60,25],[67,25],[72,20],[77,8],[80,14],[80,16],[87,22],[92,22],[94,17],[98,10],[100,4],[104,1],[104,10],[109,12],[108,20],[117,23],[122,30],[121,38],[118,39],[122,40],[126,38],[129,35],[129,42],[135,44],[141,52],[140,58],[150,59],[160,61],[163,68],[180,68],[180,72],[140,73],[110,77],[100,78],[80,73],[68,73],[60,68],[45,66],[40,60],[40,45]],
+    [[-17,21],[-16,14],[-12,7],[-8,4],[0,5],[9,4],[10,-3],[13,-10],[12,-17],[15,-27],[18,-34],[25,-34],[33,-27],[35,-20],[40,-15],[40,-5],[44,2],[51,11],[44,11],[38,18],[32,30],[20,32],[10,37],[-6,36],[-10,30]],
+    [[114,-22],[122,-18],[130,-12],[137,-12],[142,-11],[146,-19],[153,-26],[151,-34],[146,-39],[138,-35],[132,-32],[124,-34],[115,-34]],
+    [[95,5],[98,4],[104,-1],[106,-6],[104,-5],[100,-2],[96,2]],
+    [[105,-6],[110,-6.5],[114,-7],[114.5,-8.5],[110,-8],[105,-7]],
+    [[115,-8],[120,-8.5],[124,-8.5],[124,-10],[118,-9]],
+    [[109,1],[112,3],[117,7],[119,1],[116,-4],[110,-3]],
+    [[119,-5],[120,1],[125,1],[121,-1],[123,-5]],
+    [[131,-1],[141,-3],[150,-10],[141,-9],[137,-5]],
+    [[120,18],[122,18],[126,7],[122,7]],
+    [[130,31],[141,36],[142,42],[145,44],[140,41],[135,34]],
+    [[-6,50],[1,51],[0,54],[-3,59],[-6,57],[-5,54]],
+    [[44,-25],[47,-25],[50,-15],[49,-12],[43,-17]],
+    [[172,-35],[178,-38],[174,-41],[167,-46],[172,-41]],
+    [[-24,64],[-13,65],[-16,66],[-22,66]],
+  ];
+  const BOXES = LAND.map((poly) => {
+    const xs = poly.map((p) => p[0]);
+    const ys = poly.map((p) => p[1]);
+    return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  });
+
+  const SOURCES = [
+    [37.6, 55.7], [116.4, 39.9], [125.7, 39.0], [51.4, 35.7], [-46.6, -23.5], [3.4, 6.5],
+    [30.5, 50.4], [4.9, 52.4], [-77.5, 39.0], [-118.2, 34.0], [72.8, 19.0], [105.8, 21.0],
+    [26.1, 44.4], [-99.1, 19.4], [139.7, 35.7], [28.0, -26.2], [-0.1, 51.5], [121.5, 31.2],
+  ];
+  // Targets: the organisation's own sites; Jakarta (HQ) takes most of the hits.
+  const TARGETS = [
+    {p: [106.8, -6.2], w: 6}, {p: [103.8, 1.35], w: 2}, {p: [112.7, -7.25], w: 1},
+    {p: [98.7, 3.6], w: 1}, {p: [8.7, 50.1], w: 1},
+  ];
+  const SEVERITY = [
+    {c: '239, 91, 91', w: 2},
+    {c: '232, 166, 64', w: 3},
+    {c: '34, 211, 238', w: 5},
+  ];
+  const pick = (list) => {
+    let r = Math.random() * list.reduce((s, o) => s + o.w, 0);
+    return list.find((o) => (r -= o.w) < 0) || list[0];
+  };
+
+  let W = 0;
+  let H = 0;
+  let scale = 1;
+  let ox = 0;
+  let oy = 0;
+  let mapLayer = null;
+  let attacks = [];
+  let spawnAt = 0;
+
+  const proj = ([lon, lat]) => [ox + (lon + 180) * scale, oy + (80 - lat) * scale];
+
+  function isLand(lon, lat) {
+    for (let k = 0; k < LAND.length; k++) {
+      const b = BOXES[k];
+      if (lon < b[0] || lon > b[1] || lat < b[2] || lat > b[3]) continue;
+      const poly = LAND[k];
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i];
+        const [xj, yj] = poly[j];
+        if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  }
+
+  function setup() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    if (!W || !H) return;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Fit the map (lat 80 to -58) to the width, but keep it at least 80% of the height.
+    scale = Math.max(W / 360, (H * 0.8) / 138);
+    ox = (W - 360 * scale) / 2;
+    oy = (H - 138 * scale) / 2;
+
+    mapLayer = document.createElement('canvas');
+    mapLayer.width = W * dpr;
+    mapLayer.height = H * dpr;
+    const m = mapLayer.getContext('2d');
+    m.setTransform(dpr, 0, 0, dpr, 0, 0);
+    m.fillStyle = `rgba(${rgb}, .22)`;
+    const gap = W < 700 ? 6 : 8;
+    for (let y = Math.max(0, oy); y < Math.min(H, oy + 138 * scale); y += gap) {
+      for (let x = 0; x < W; x += gap) {
+        const lon = (x - ox) / scale - 180;
+        const lat = 80 - (y - oy) / scale;
+        if (lon >= -180 && lon <= 180 && isLand(lon, lat)) {
+          m.beginPath();
+          m.arc(x, y, 1.2, 0, Math.PI * 2);
+          m.fill();
+        }
+      }
+    }
+  }
+
+  function spawn(now) {
+    const s = proj(SOURCES[Math.floor(Math.random() * SOURCES.length)]);
+    const t = proj(pick(TARGETS).p);
+    const dist = Math.hypot(t[0] - s[0], t[1] - s[1]);
+    attacks.push({
+      s, t,
+      c: [(s[0] + t[0]) / 2, Math.min(s[1], t[1]) - dist * 0.3],
+      col: pick(SEVERITY).c,
+      born: now,
+      dur: 1600 + Math.random() * 1400,
+    });
+  }
+
+  const bez = (a, u) => {
+    const v = 1 - u;
+    return [v * v * a.s[0] + 2 * v * u * a.c[0] + u * u * a.t[0], v * v * a.s[1] + 2 * v * u * a.c[1] + u * u * a.t[1]];
+  };
+
+  function drawArc(a, from, to, alpha) {
+    const steps = 24;
+    for (let i = 0; i < steps; i++) {
+      const u0 = from + ((to - from) * i) / steps;
+      const u1 = from + ((to - from) * (i + 1)) / steps;
+      const p0 = bez(a, u0);
+      const p1 = bez(a, u1);
+      ctx.strokeStyle = `rgba(${a.col}, ${alpha * ((i + 1) / steps)})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(p0[0], p0[1]);
+      ctx.lineTo(p1[0], p1[1]);
+      ctx.stroke();
+    }
+  }
+
+  function dot(x, y, r, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function ring(x, y, r, color, width) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function frame(now) {
+    // The window can report 0×0 while it is still opening; wait until it has a size.
+    if (!W || !H) {
+      setup();
+      if (!W || !H) { requestAnimationFrame(frame); return; }
+    }
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(mapLayer, 0, 0, W, H);
+    ctx.lineCap = 'round';
+
+    if (still) {
+      attacks = [];
+      for (let i = 0; i < 12; i++) spawn(0);
+      attacks.forEach((a) => drawArc(a, 0, 1, 0.4));
+    } else {
+      if (now > spawnAt && attacks.length < 16) {
+        spawn(now);
+        spawnAt = now + 250 + Math.random() * 450;
+      }
+      attacks = attacks.filter((a) => (now - a.born) / a.dur < 1.6);
+      for (const a of attacks) {
+        const age = (now - a.born) / a.dur;
+        if (age < 1) {
+          drawArc(a, Math.max(0, age - 0.35), age, 0.85);
+          const h = bez(a, age);
+          dot(h[0], h[1], 4, `rgba(${a.col}, .25)`);
+          dot(h[0], h[1], 1.8, `rgba(${a.col}, 1)`);
+          dot(a.s[0], a.s[1], 2, `rgba(${a.col}, ${0.7 * (1 - age)})`);
+        } else {
+          const k = (age - 1) / 0.6;
+          ring(a.t[0], a.t[1], 3 + k * 16, `rgba(${a.col}, ${0.8 * (1 - k)})`, 1.5);
+        }
+      }
+    }
+
+    // Steady pulse on every protected site.
+    const pulse = ((now || 0) % 2000) / 2000;
+    TARGETS.forEach((tg) => {
+      const [x, y] = proj(tg.p);
+      dot(x, y, 2.4, 'rgba(34, 211, 238, .9)');
+      ring(x, y, 4 + pulse * 12, `rgba(34, 211, 238, ${0.5 * (1 - pulse)})`, 1);
+    });
+
+    if (!still) requestAnimationFrame(frame);
+  }
+
+  setup();
+  requestAnimationFrame(frame);
+  window.addEventListener('resize', () => {
+    setup();
+    attacks = [];
+    if (still) requestAnimationFrame(frame);
+  });
+})();
+</script>
+</body>
+</html>

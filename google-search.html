@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BerukSakti</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #202124;
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --border: #5f6368;
+    --hover-shadow: 0 1px 6px rgba(0,0,0,.6);
+    --btn-bg: #303134;
+    --footer-bg: #171717;
+    --link: #8ab4f8;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: Arial, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  a { color: inherit; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 16px;
+    font-size: 13px;
+  }
+  header nav { display: flex; gap: 15px; align-items: center; }
+  .apps {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer;
+  }
+  .apps:hover { background: rgba(128,128,128,.15); }
+  .signin {
+    background: #1a73e8; color: #fff; padding: 9px 23px;
+    border-radius: 4px; font-weight: 500; font-size: 14px;
+  }
+  .signin:hover { text-decoration: none; background: #1b66c9; }
+
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 16px;
+    margin-top: 12vh;
+  }
+  .logo {
+    font-family: "Product Sans", "Google Sans", Arial, sans-serif;
+    font-size: clamp(44px, 13vw, 92px);
+    font-weight: 500;
+    letter-spacing: -3px;
+    margin-bottom: 26px;
+    user-select: none;
+  }
+  .logo span:nth-child(4n+1) { color: #4285f4; }
+  .logo span:nth-child(4n+2) { color: #ea4335; }
+  .logo span:nth-child(4n+3) { color: #fbbc05; }
+  .logo span:nth-child(4n+4) { color: #34a853; }
+
+  form { width: 100%; max-width: 584px; }
+  .search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 46px;
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 0 14px;
+    background: var(--bg);
+  }
+  .search-box:hover, .search-box:focus-within {
+    box-shadow: var(--hover-shadow);
+    border-color: transparent;
+  }
+  .search-box.open {
+    border-radius: 24px 24px 0 0;
+    box-shadow: var(--hover-shadow);
+    border-color: transparent;
+  }
+  .search-box input {
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 16px;
+    padding: 0 12px;
+    min-width: 0;
+  }
+  .icon-btn {
+    background: none; border: 0; cursor: pointer; padding: 4px;
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .clear { display: none; border-right: 1px solid var(--border); padding-right: 10px; margin-right: 6px; }
+  .has-text .clear { display: grid; }
+
+  .suggestions {
+    display: none;
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    background: var(--bg);
+    border-radius: 0 0 24px 24px;
+    box-shadow: 0 4px 6px rgba(0,0,0,.6);
+    padding: 4px 0 16px;
+    list-style: none;
+    margin: 0;
+    z-index: 10;
+  }
+  .search-box.open .suggestions { display: block; }
+  .suggestions::before {
+    content: ""; display: block; height: 1px; background: var(--border);
+    margin: 0 14px 4px;
+  }
+  .suggestions li {
+    display: flex; align-items: center; gap: 14px;
+    padding: 6px 20px; cursor: pointer; font-size: 16px;
+  }
+  .suggestions li:hover, .suggestions li.active { background: rgba(128,128,128,.12); }
+  .suggestions li svg { flex: none; color: var(--muted); }
+
+  .buttons {
+    display: flex; justify-content: center; gap: 12px;
+    margin-top: 28px; flex-wrap: wrap;
+  }
+  .buttons button {
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-bg);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 14px;
+    padding: 0 16px;
+    height: 36px;
+    cursor: pointer;
+  }
+  .buttons button:hover { border-color: var(--border); box-shadow: 0 1px 1px rgba(0,0,0,.1); }
+
+  .lang { margin-top: 28px; font-size: 13px; color: var(--muted); text-align: center; }
+  .lang a { color: var(--link); margin: 0 4px; }
+
+  footer { background: var(--footer-bg); font-size: 14px; color: var(--muted); }
+  footer .row { padding: 14px 30px; }
+  footer .row + .row {
+    border-top: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px;
+  }
+  footer .links { display: flex; gap: 26px; flex-wrap: wrap; }
+
+  @media (max-width: 600px) {
+    main { margin-top: 8vh; }
+    footer .row { padding: 12px 16px; }
+    footer .links { gap: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <nav>
+    <a href="https://about.google/">Tentang</a>
+    <a href="https://store.google.com/">Toko</a>
+  </nav>
+  <nav>
+    <a href="https://mail.google.com/">Gmail</a>
+    <a href="https://www.google.com/imghp">Gambar</a>
+    <span class="apps" title="Aplikasi Google">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>
+    </span>
+    <a class="signin" href="https://accounts.google.com/">Login</a>
+  </nav>
+</header>
+
+<main>
+  <div class="logo" aria-label="BerukSakti"><span>B</span><span>e</span><span>r</span><span>u</span><span>k</span><span>S</span><span>a</span><span>k</span><span>t</span><span>i</span></div>
+
+  <form id="searchForm" action="https://www.google.com/search" method="get" autocomplete="off">
+    <div class="search-box" id="box">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="color:var(--muted)"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input id="q" name="q" type="text" aria-label="Telusuri" title="Telusuri" autofocus>
+      <button type="button" class="icon-btn clear" id="clear" aria-label="Hapus">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+      <button type="button" class="icon-btn" id="mic" aria-label="Penelusuran suara">
+        <svg width="22" height="22" viewBox="0 0 24 24"><path fill="#4285f4" d="M12 15c1.66 0 3-1.31 3-2.97V5.97C15 4.31 13.66 3 12 3S9 4.31 9 5.97v6.06C9 13.69 10.34 15 12 15z"/><path fill="#34a853" d="M11 18.08h2V21h-2z"/><path fill="#fbbc05" d="M7.05 16.87c-1.27-1.33-2.05-3.13-2.05-5.12h2c0 1.46.57 2.78 1.48 3.76l-1.43 1.36z"/><path fill="#ea4335" d="M12 18.07c-1.94 0-3.71-.79-5-2.07l1.42-1.42c.92.93 2.19 1.49 3.58 1.49 2.76 0 5-2.24 5-5h2c0 3.86-3.14 7-7 7z"/></svg>
+      </button>
+      <ul class="suggestions" id="suggestions" role="listbox"></ul>
+    </div>
+
+    <div class="buttons">
+      <button type="submit">Penelusuran BerukSakti</button>
+      <button type="button" id="lucky">Saya Lagi Beruntung</button>
+      <button type="button" id="ai">✨ Chat with AI</button>
+    </div>
+  </form>
+
+  <div class="lang">
+    BerukSakti tersedia dalam: <a href="#">English</a><a href="#">Basa Jawa</a><a href="#">Basa Sunda</a>
+  </div>
+</main>
+
+<footer>
+  <div class="row">Indonesia</div>
+  <div class="row">
+    <div class="links">
+      <a href="https://ads.google.com/">Periklanan</a>
+      <a href="https://smallbusiness.withgoogle.com/">Bisnis</a>
+      <a href="https://www.google.com/search/howsearchworks/">Cara kerja Penelusuran</a>
+    </div>
+    <div class="links">
+      <a href="https://policies.google.com/privacy">Privasi</a>
+      <a href="https://policies.google.com/terms">Persyaratan</a>
+      <a href="#">Setelan</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  const form = document.getElementById('searchForm');
+  const box = document.getElementById('box');
+  const q = document.getElementById('q');
+  const list = document.getElementById('suggestions');
+  const clearBtn = document.getElementById('clear');
+
+  const SAMPLE = [
+    'cuaca hari ini', 'berita terkini', 'kurs dollar ke rupiah', 'resep nasi goreng',
+    'jadwal sholat', 'terjemahan inggris indonesia', 'harga emas hari ini',
+    'cara membuat website', 'tutorial javascript', 'google maps', 'youtube',
+    'kalkulator', 'jam berapa sekarang', 'film bioskop terbaru', 'claude ai'
+  ];
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem('searchHistory') || '[]'); } catch (e) {}
+
+  let active = -1;
+
+  function go(term) {
+    term = term.trim();
+    if (!term) return;
+    history = [term, ...history.filter(h => h !== term)].slice(0, 8);
+    try { localStorage.setItem('searchHistory', JSON.stringify(history)); } catch (e) {}
+    window.location.href = 'https://www.google.com/search?q=' + encodeURIComponent(term);
+  }
+
+  function render() {
+    const v = q.value.trim().toLowerCase();
+    box.classList.toggle('has-text', q.value.length > 0);
+    const fromHistory = history.filter(h => h.toLowerCase().includes(v)).map(t => ({ t, h: true }));
+    const fromSample = v ? SAMPLE.filter(s => s.includes(v) && !history.includes(s)).map(t => ({ t, h: false })) : [];
+    const items = [...fromHistory, ...fromSample].slice(0, 8);
+    active = -1;
+    list.innerHTML = '';
+    items.forEach(({ t, h }) => {
+      const li = document.createElement('li');
+      li.innerHTML = h
+        ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7a6.97 6.97 0 0 1-4.95-2.05l-1.42 1.42A8.95 8.95 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>'
+        : '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>';
+      const span = document.createElement('span');
+      span.textContent = t;
+      li.appendChild(span);
+      li.addEventListener('mousedown', e => { e.preventDefault(); go(t); });
+      list.appendChild(li);
+    });
+    box.classList.toggle('open', items.length > 0 && document.activeElement === q);
+  }
+
+  q.addEventListener('input', render);
+  q.addEventListener('focus', render);
+  q.addEventListener('blur', () => box.classList.remove('open'));
+  q.addEventListener('keydown', e => {
+    const items = [...list.children];
+    if (!items.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items.forEach((li, i) => li.classList.toggle('active', i === active));
+      q.value = items[active].textContent;
+    } else if (e.key === 'Escape') {
+      box.classList.remove('open');
+    }
+  });
+
+  clearBtn.addEventListener('click', () => { q.value = ''; q.focus(); render(); });
+
+  form.addEventListener('submit', e => { e.preventDefault(); go(q.value); });
+
+  document.getElementById('lucky').addEventListener('click', () => {
+    const term = q.value.trim();
+    if (!term) { window.location.href = 'https://doodles.google/'; return; }
+    window.location.href = 'https://www.google.com/search?btnI=1&q=' + encodeURIComponent(term);
+  });
+
+  // Buka Claude dengan isi kotak pencarian sebagai pertanyaan pertama
+  document.getElementById('ai').addEventListener('click', () => {
+    const term = q.value.trim();
+    window.location.href = 'https://claude.ai/new' + (term ? '?q=' + encodeURIComponent(term) : '');
+  });
+
+  document.getElementById('mic').addEventListener('click', () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Browser ini tidak mendukung penelusuran suara.'); return; }
+    const rec = new SR();
+    rec.lang = 'id-ID';
+    rec.onresult = ev => { q.value = ev.results[0][0].transcript; go(q.value); };
+    rec.start();
+  });
+
+  // Shortcut "/" untuk fokus ke kotak pencarian
+  document.addEventListener('keydown', e => {
+    if (e.key === '/' && document.activeElement !== q) { e.preventDefault(); q.focus(); }
+  });
+</script>
+</body>
+</html>
