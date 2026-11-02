@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Beruk Sakti Monitoring</title>
 <style>
-/* Layout: left sidebar of panels (overview, alerts, threat intel, AI investigation, SIEM health); each panel is a header, KPI row and card grid */
+/* Layout: left sidebar of eight modules (overview, alerts, AI, threat intel, incidents, automation, SIEM health, admin); each module is a header, KPI row and card grid */
 /* Dark mode only, regardless of the system setting */
 :root {
   --bg: #070b12;
@@ -88,6 +88,7 @@ body::after {
   flex-direction: column;
   gap: 4px;
   padding: 20px 12px;
+  overflow-y: auto;
   background: rgba(9, 14, 22, .78);
   border-right: 1px solid var(--line);
   -webkit-backdrop-filter: blur(6px);
@@ -184,8 +185,70 @@ body::after {
 .chip-low { color: var(--muted); }
 .st-healthy { color: var(--ok); }
 .st-warning { color: var(--warn); }
+.soc-warn { color: var(--warn); }
+.tone-ok { color: var(--ok); }
+.tone-warn { color: var(--warn); }
+.tone-bad { color: var(--bad); }
+.tone-info { color: var(--accent); }
+.tone-muted { color: var(--muted); }
+.soc-select { font: inherit; font-size: 13px; padding: 6px 8px; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
+.soc-select-sm { font-size: 12px; padding: 3px 6px; }
+.soc-btn { font: inherit; font-size: 13px; padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-solid); color: var(--fg); cursor: pointer; }
+.soc-btn:hover { border-color: var(--muted); }
+.soc-btn.primary { background: var(--accent); border-color: var(--accent); color: #06101c; font-weight: 600; }
+.soc-btn.danger { color: var(--bad); }
+.soc-select:focus-visible, .soc-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.soc-table tr.click { cursor: pointer; }
+.soc-table tr.click:hover td { background: rgba(91, 157, 224, .06); }
+.soc-table tr.sel td { background: rgba(91, 157, 224, .14); }
+.soc-table td.c, .soc-table th.c { text-align: center; }
+/* Overview: severity share bar */
+.sev-bar { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; }
+.sev-bar span { min-width: 3px; }
+/* AI Investigation: risk list, correlated log lines */
+.risk-list { display: grid; gap: 8px; }
+.risk-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(80px, 2fr) 2.5em; gap: 10px; align-items: center; font-size: 13px; }
+.risk-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.risk-bar { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
+.risk-bar span { display: block; height: 100%; }
+.risk-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.risk-pill { font-size: 12px; font-weight: 600; padding: 0 8px; border: 1px solid currentColor; border-radius: 999px; }
+.ai-card .corr { list-style: none; padding: 0; font-size: 13px; }
+.corr li { display: grid; grid-template-columns: 3.4em 4.8em minmax(0, 1fr); gap: 8px; }
+.corr-src { color: var(--muted); }
+/* Incident Management: investigation timeline */
+.timeline { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 2px solid var(--line); display: grid; gap: 12px; }
+.timeline li { position: relative; display: grid; gap: 1px; }
+.timeline li::before { content: ""; position: absolute; left: -22px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--bg); }
+.tl-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Threat Intelligence: IOC lookup */
+.ti-examples { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.ti-examples button { font: 12px var(--mono); padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--fg); cursor: pointer; }
+.ti-examples button:hover { border-color: var(--muted); }
+.ti-result { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(7, 11, 18, .5); }
+.ti-result[hidden] { display: none; }
+.ti-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ti-ind { font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
+.ti-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 13px; }
+.ti-dl dt { color: var(--muted); }
+.ti-dl dd { margin: 0; overflow-wrap: anywhere; }
+/* Automation Center: approvals and on/off switches */
+.approvals { display: grid; gap: 10px; }
+.approval { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(7, 11, 18, .5); }
+.approval-main { flex: 1 1 18rem; min-width: 0; display: grid; gap: 2px; }
+.approval-meta { font-size: 12px; color: var(--muted); }
+.approval-act { display: flex; gap: 8px; }
+.switch { position: relative; display: inline-block; width: 34px; height: 18px; vertical-align: middle; }
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--muted-bar); pointer-events: none; transition: background .15s; }
+.switch span::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); transition: transform .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(16px); }
+.switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 640px) {
   .soc-opt { display: none; }
+  .risk-row { grid-template-columns: auto minmax(0, 1fr) 2.5em; }
+  .risk-bar { display: none; }
   .soc-title { font-size: 26px; }
 }
 </style>
@@ -193,7 +256,7 @@ body::after {
 <body>
 <canvas id="bg-map" aria-hidden="true"></canvas>
 <div class="app">
-<nav class="side" aria-label="Panel dashboard">
+<nav class="side" aria-label="Modul dashboard">
   <div class="side-brand">
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>
     <span>Beruk Sakti<small>Monitoring</small></span>
@@ -204,26 +267,41 @@ body::after {
   </a>
   <a class="side-link" href="#alerts" data-view="alerts">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21h4"/></svg>
-    Alert Monitoring
-    <span class="side-badge" id="badge-alerts" title="Insiden kritis terbuka">—</span>
-  </a>
-  <a class="side-link" href="#intel" data-view="intel">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
-    Threat Intelligence
+    Alert Management
+    <span class="side-badge" id="badge-alerts" title="Alert terbuka yang belum ditugaskan">—</span>
   </a>
   <a class="side-link" href="#ai" data-view="ai">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
     AI Investigation
   </a>
+  <a class="side-link" href="#intel" data-view="intel">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+    Threat Intelligence
+  </a>
+  <a class="side-link" href="#incidents" data-view="incidents">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg>
+    Incident Management
+    <span class="side-badge" id="badge-incidents" title="Insiden kritis terbuka">—</span>
+  </a>
+  <a class="side-link" href="#automation" data-view="automation">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg>
+    Automation Center
+    <span class="side-badge warn" id="badge-automation" title="Aksi menunggu persetujuan">—</span>
+  </a>
   <a class="side-link" href="#siem" data-view="siem">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
     SIEM Health
-    <span class="side-badge warn" id="badge-siem" title="Sumber log bermasalah">—</span>
+    <span class="side-badge warn" id="badge-siem" title="Sumber log dan agen bermasalah">—</span>
+  </a>
+  <a class="side-link" href="#admin" data-view="admin">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+    Administration
   </a>
   <p class="side-note">Data contoh untuk ilustrasi, per 2 November 2026. Angka di halaman ini bukan data SIEM asli.</p>
 </nav>
 
 <main class="soc">
+<!-- 1. SOC Overview -->
 <section class="soc-view" id="view-overview">
   <header class="soc-head">
     <h1 class="soc-title">SOC Overview</h1>
@@ -265,7 +343,7 @@ body::after {
 
   <div class="soc-grid">
     <section class="soc-card soc-wide">
-      <h2>Volume alert per hari</h2>
+      <h2>Tren alert per hari</h2>
       <p class="soc-card-note">14 hari terakhir, ditumpuk menurut severity. Arahkan kursor ke batang untuk rinciannya.</p>
       <ul class="soc-legend">
         <li><span class="soc-sw" style="background:var(--critical)"></span>Critical</li>
@@ -275,18 +353,255 @@ body::after {
       </ul>
       <div class="soc-chart" id="chart-volume"></div>
     </section>
+
+    <section class="soc-card">
+      <h2>Distribusi severity</h2>
+      <p class="soc-card-note">Total alert 7 hari terakhir menurut severity.</p>
+      <div class="sev-bar" id="sev-bar"></div>
+      <table class="soc-table">
+        <thead><tr>
+          <th>Severity</th>
+          <th class="soc-num">Alert</th>
+          <th class="soc-num">Porsi</th>
+          <th class="soc-num">vs 7 hari sebelumnya</th>
+        </tr></thead>
+        <tbody id="tb-sev"></tbody>
+      </table>
+    </section>
+
+    <section class="soc-card">
+      <h2>Ancaman teratas</h2>
+      <p class="soc-card-note">Kelompok ancaman dengan alert terbanyak, 7 hari terakhir.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Ancaman</th>
+            <th class="soc-opt">Kategori</th>
+            <th class="soc-num">Alert</th>
+            <th class="soc-num">Perubahan</th>
+          </tr></thead>
+          <tbody id="tb-threats"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Alert per taktik MITRE ATT&amp;CK</h2>
+      <p class="soc-card-note">7 hari terakhir. Tiga taktik terbanyak disorot.</p>
+      <div class="soc-chart" id="chart-tactics" style="min-height:272px"></div>
+    </section>
   </div>
 </section>
 
+<!-- 2. Alert Management -->
 <section class="soc-view" id="view-alerts" hidden>
   <header class="soc-head">
-    <h1 class="soc-title">Alert Monitoring</h1>
-    <p class="soc-lede"><b id="al-open">—</b> insiden terbuka, <b id="al-crit">—</b> di antaranya kritis dan <b id="al-unassigned">—</b> belum ditugaskan ke analis.</p>
+    <h1 class="soc-title">Alert Management</h1>
+    <p class="soc-lede"><b id="am-new">—</b> alert baru menunggu triage, <b id="am-unassigned">—</b> alert terbuka belum punya analis, dan <b id="am-esc">—</b> sudah dieskalasi menjadi insiden.</p>
+  </header>
+
+  <div class="soc-tiles">
+    <div class="soc-tile">
+      <span class="soc-tile-label">Di antrean</span>
+      <span class="soc-tile-value" id="am-t-queue">—</span>
+      <span class="soc-tile-sub">alert belum ditutup</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Baru</span>
+      <span class="soc-tile-value" id="am-t-new">—</span>
+      <span class="soc-tile-sub">belum disentuh analis</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Sedang triage</span>
+      <span class="soc-tile-value" id="am-t-triage">—</span>
+      <span class="soc-tile-sub">sedang diperiksa</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Dieskalasi</span>
+      <span class="soc-tile-value" id="am-t-esc">—</span>
+      <span class="soc-tile-sub">menjadi insiden</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Ditutup</span>
+      <span class="soc-tile-value" id="am-t-closed">—</span>
+      <span class="soc-tile-sub"><b id="am-t-fp">—</b> false positive</span>
+    </div>
+  </div>
+
+  <div class="soc-grid">
+    <section class="soc-card soc-wide">
+      <h2>Antrean alert</h2>
+      <p class="soc-card-note">Ubah analis atau status triage langsung dari tabel. Perubahan hanya tersimpan selama halaman terbuka; waktu dalam UTC.</p>
+      <div class="soc-tools">
+        <input id="am-search" class="soc-search" type="search" placeholder="Cari ID, rule, aset…" aria-label="Cari alert">
+        <select id="am-sev" class="soc-select" aria-label="Filter severity">
+          <option value="">Semua severity</option>
+          <option>Critical</option>
+          <option>High</option>
+          <option>Medium</option>
+          <option>Low</option>
+        </select>
+        <select id="am-status" class="soc-select" aria-label="Filter status triage">
+          <option value="open">Belum ditutup</option>
+          <option value="">Semua status</option>
+        </select>
+        <select id="am-owner" class="soc-select" aria-label="Filter analis">
+          <option value="">Semua analis</option>
+          <option value="-">Belum ditugaskan</option>
+        </select>
+      </div>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>ID</th>
+            <th class="soc-num">Waktu</th>
+            <th>Severity</th>
+            <th>Rule</th>
+            <th class="soc-opt">Sumber</th>
+            <th class="soc-opt">Aset</th>
+            <th>Analis</th>
+            <th>Status triage</th>
+          </tr></thead>
+          <tbody id="tb-alerts"></tbody>
+        </table>
+      </div>
+      <p class="soc-card-note" id="am-nomatch" hidden>Tidak ada alert yang cocok dengan filter.</p>
+    </section>
+  </div>
+</section>
+
+<!-- 3. AI Investigation -->
+<section class="soc-view" id="view-ai" hidden>
+  <header class="soc-head">
+    <h1 class="soc-title">AI Investigation</h1>
+    <p class="soc-lede">AI menganalisis <b id="ai-count">—</b> insiden prioritas dan mengorelasikan <b id="ai-logs">—</b> event log; skor risiko tertinggi saat ini <b id="ai-top">—</b>. Hasilnya perlu diverifikasi analis sebelum ditindaklanjuti.</p>
   </header>
 
   <div class="soc-grid">
     <section class="soc-card soc-wide">
-      <h2>Insiden aktif</h2>
+      <h2>Skor risiko</h2>
+      <p class="soc-card-note">Skala 0–100, gabungan severity, kritikalitas aset, keyakinan AI, dan kecocokan IOC.</p>
+      <div class="risk-list" id="ai-risk"></div>
+    </section>
+  </div>
+  <div class="soc-grid" id="ai-list"></div>
+</section>
+
+<!-- 4. Threat Intelligence -->
+<section class="soc-view" id="view-intel" hidden>
+  <header class="soc-head">
+    <h1 class="soc-title">Threat Intelligence</h1>
+    <p class="soc-lede"><b id="ti-hits">—</b> kecocokan IOC dalam 7 hari terakhir, dari <b id="ti-count">—</b> indikator yang dipantau lewat <b id="ti-feeds">—</b> feed.</p>
+  </header>
+
+  <div class="soc-grid">
+    <section class="soc-card">
+      <h2>Lookup IOC</h2>
+      <p class="soc-card-note">Cek reputasi IP, domain, atau hash file terhadap feed intelijen yang tersinkron.</p>
+      <form id="ti-form" class="soc-tools">
+        <input id="ti-q" class="soc-search" type="search" placeholder="IP, domain, atau hash…" aria-label="Indikator yang dicek">
+        <button class="soc-btn primary" type="submit">Cek</button>
+      </form>
+      <div class="ti-examples" id="ti-examples">Contoh:</div>
+      <div class="ti-result" id="ti-result" hidden></div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Feed intelijen ancaman</h2>
+      <p class="soc-card-note">Jumlah indikator aktif dan kapan feed terakhir disinkronkan.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Feed</th>
+            <th class="soc-num">Indikator</th>
+            <th class="soc-num">Sinkron terakhir</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody id="tb-feeds"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>IOC yang cocok di lingkungan kita</h2>
+      <p class="soc-card-note">Indikator dari feed yang terlihat di log, diperkaya dengan reputasinya. Klik baris untuk melihat detail di Lookup IOC.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Indikator</th>
+            <th>Tipe</th>
+            <th>Reputasi</th>
+            <th class="soc-opt">Ancaman</th>
+            <th class="soc-opt">Negara</th>
+            <th class="soc-num">Kecocokan</th>
+            <th class="soc-num soc-opt">Terakhir terlihat</th>
+            <th>Insiden</th>
+          </tr></thead>
+          <tbody id="tb-iocs"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</section>
+
+<!-- 5. Incident Management -->
+<section class="soc-view" id="view-incidents" hidden>
+  <header class="soc-head">
+    <h1 class="soc-title">Incident Management</h1>
+    <p class="soc-lede"><b id="im-open">—</b> insiden terbuka dikelola dalam <b id="im-cases">—</b> kasus aktif, dan <b id="im-breach">—</b> kasus sudah melewati target SLA.</p>
+  </header>
+
+  <div class="soc-tiles">
+    <div class="soc-tile">
+      <span class="soc-tile-label">Insiden terbuka</span>
+      <span class="soc-tile-value" id="im-t-open">—</span>
+      <span class="soc-tile-sub"><b id="im-t-crit">—</b> kritis</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Kasus aktif</span>
+      <span class="soc-tile-value" id="im-t-cases">—</span>
+      <span class="soc-tile-sub">gabungan insiden terkait</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Melewati SLA</span>
+      <span class="soc-tile-value" id="im-t-breach">—</span>
+      <span class="soc-tile-sub">target respons per severity</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">MTTR, 7 hari terakhir</span>
+      <span class="soc-tile-value"><span id="im-t-mttr">—</span><span class="soc-unit">jam</span></span>
+      <span class="soc-tile-sub">dari dibuka sampai ditangani</span>
+    </div>
+  </div>
+
+  <div class="soc-grid">
+    <section class="soc-card soc-wide">
+      <h2>Kasus</h2>
+      <p class="soc-card-note">Satu kasus menggabungkan insiden yang saling terkait. Klik baris untuk melihat timeline investigasinya.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Kasus</th>
+            <th>Judul</th>
+            <th>Severity</th>
+            <th class="soc-opt">Pemilik</th>
+            <th class="soc-opt">Insiden</th>
+            <th>Status</th>
+            <th class="soc-num">SLA</th>
+          </tr></thead>
+          <tbody id="tb-cases"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2 id="tl-title">Timeline investigasi</h2>
+      <p class="soc-card-note" id="tl-note"></p>
+      <ol class="timeline" id="tl-list"></ol>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Pelacakan insiden</h2>
       <p class="soc-card-note">Semua insiden yang belum ditutup. Klik judul kolom untuk mengurutkan; waktu dalam UTC.</p>
       <div class="soc-tools">
         <input id="soc-search" class="soc-search" type="search" placeholder="Cari ID, judul, aset, taktik…" aria-label="Cari insiden">
@@ -311,112 +626,137 @@ body::after {
   </div>
 </section>
 
-<section class="soc-view" id="view-intel" hidden>
+<!-- 6. Automation Center -->
+<section class="soc-view" id="view-automation" hidden>
   <header class="soc-head">
-    <h1 class="soc-title">Threat Intelligence</h1>
-    <p class="soc-lede"><b id="ti-hits">—</b> kecocokan IOC dalam 7 hari terakhir, dari <b id="ti-count">—</b> indikator yang dipantau lewat <b id="ti-feeds">—</b> feed.</p>
+    <h1 class="soc-title">Automation Center</h1>
+    <p class="soc-lede"><b id="au-runs">—</b> eksekusi playbook dalam 24 jam terakhir dengan tingkat keberhasilan <b id="au-rate">—</b>; <b id="au-pending">—</b> aksi menunggu persetujuan analis.</p>
   </header>
 
+  <div class="soc-tiles">
+    <div class="soc-tile">
+      <span class="soc-tile-label">Eksekusi, 24 jam</span>
+      <span class="soc-tile-value" id="au-t-runs">—</span>
+      <span class="soc-tile-sub">semua playbook</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Berhasil</span>
+      <span class="soc-tile-value" id="au-t-rate">—</span>
+      <span class="soc-tile-sub">dari eksekusi yang selesai</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Waktu analis dihemat</span>
+      <span class="soc-tile-value"><span id="au-t-saved">—</span><span class="soc-unit">jam</span></span>
+      <span class="soc-tile-sub">perkiraan, 24 jam terakhir</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Menunggu persetujuan</span>
+      <span class="soc-tile-value" id="au-t-pending">—</span>
+      <span class="soc-tile-sub">aksi berdampak tinggi</span>
+    </div>
+  </div>
+
   <div class="soc-grid">
-    <section class="soc-card">
-      <h2>Alert per taktik MITRE ATT&amp;CK</h2>
-      <p class="soc-card-note">7 hari terakhir. Tiga taktik terbanyak disorot.</p>
-      <div class="soc-chart" id="chart-tactics" style="min-height:272px"></div>
+    <section class="soc-card soc-wide">
+      <h2>Persetujuan aksi</h2>
+      <p class="soc-card-note">Aksi berdampak tinggi baru dijalankan setelah disetujui analis. Keputusan di sini hanya tersimpan selama halaman terbuka.</p>
+      <div class="approvals" id="au-approvals"></div>
     </section>
 
-    <section class="soc-card">
-      <h2>Feed intelijen ancaman</h2>
-      <p class="soc-card-note">Jumlah indikator aktif dan kapan feed terakhir disinkronkan.</p>
+    <section class="soc-card soc-wide">
+      <h2>Playbook</h2>
+      <p class="soc-card-note">Playbook otomatis yang terpasang. Nyalakan atau matikan dari kolom Aktif.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
-            <th>Feed</th>
-            <th class="soc-num">Indikator</th>
-            <th class="soc-num">Sinkron terakhir</th>
-            <th>Status</th>
+            <th>Playbook</th>
+            <th class="soc-opt">Pemicu</th>
+            <th class="soc-num">Eksekusi 7 hari</th>
+            <th class="soc-num">Berhasil</th>
+            <th>Persetujuan</th>
+            <th class="c">Aktif</th>
           </tr></thead>
-          <tbody id="tb-feeds"></tbody>
+          <tbody id="tb-playbooks"></tbody>
         </table>
       </div>
     </section>
 
     <section class="soc-card soc-wide">
-      <h2>IOC yang cocok di lingkungan kita</h2>
-      <p class="soc-card-note">Indikator dari feed yang terlihat di log, diurutkan dari jumlah kecocokan terbanyak.</p>
+      <h2>Riwayat eksekusi workflow</h2>
+      <p class="soc-card-note">Eksekusi terbaru; waktu dalam UTC.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
-            <th>Indikator</th>
-            <th>Tipe</th>
-            <th class="soc-opt">Ancaman</th>
-            <th class="soc-opt">Feed</th>
-            <th class="soc-num">Kecocokan</th>
-            <th class="soc-num soc-opt">Terakhir terlihat</th>
-            <th>Insiden</th>
+            <th class="soc-num">Waktu</th>
+            <th>Playbook</th>
+            <th class="soc-opt">Target</th>
+            <th class="soc-num soc-opt">Durasi</th>
+            <th>Status</th>
           </tr></thead>
-          <tbody id="tb-iocs"></tbody>
+          <tbody id="tb-runs"></tbody>
         </table>
       </div>
     </section>
   </div>
 </section>
 
-<section class="soc-view" id="view-ai" hidden>
-  <header class="soc-head">
-    <h1 class="soc-title">AI Investigation</h1>
-    <p class="soc-lede">Ringkasan investigasi otomatis untuk <b id="ai-count">—</b> insiden prioritas. Hasilnya perlu diverifikasi analis sebelum ditindaklanjuti.</p>
-  </header>
-  <div class="soc-grid" id="ai-list"></div>
-</section>
-
+<!-- 7. SIEM Health -->
 <section class="soc-view" id="view-siem" hidden>
   <header class="soc-head">
     <h1 class="soc-title">SIEM Health</h1>
-    <p class="soc-lede"><b id="sh-healthy">—</b> dari <b id="sh-total">—</b> sumber log sehat, dengan total <b id="sh-eps">—</b> event per detik masuk ke SIEM.</p>
+    <p class="soc-lede">Status cluster <b id="sh-cluster">—</b>; <b id="sh-healthy">—</b> dari <b id="sh-total">—</b> sumber log sehat dengan total <b id="sh-eps">—</b> event per detik, dan <b id="sh-errors">—</b> error pipeline dalam 24 jam terakhir.</p>
   </header>
 
   <div class="soc-tiles">
+    <div class="soc-tile">
+      <span class="soc-tile-label">Status cluster</span>
+      <span class="soc-tile-value" id="sh-cluster-tile">—</span>
+      <span class="soc-tile-sub"><b id="sh-nodes">—</b> node</span>
+    </div>
     <div class="soc-tile">
       <span class="soc-tile-label">Total EPS</span>
       <span class="soc-tile-value" id="sh-eps-tile">—</span>
       <span class="soc-tile-sub">event per detik, semua sumber</span>
     </div>
     <div class="soc-tile">
-      <span class="soc-tile-label">Sumber sehat</span>
-      <span class="soc-tile-value" id="sh-ok">—</span>
-      <span class="soc-tile-sub">mengirim data normal</span>
+      <span class="soc-tile-label">Agen aktif</span>
+      <span class="soc-tile-value"><span id="sh-agents">—</span><span class="soc-unit">dari <span id="sh-agents-total">—</span></span></span>
+      <span class="soc-tile-sub">check-in &lt; 10 menit</span>
     </div>
     <div class="soc-tile">
-      <span class="soc-tile-label">Sumber terlambat</span>
-      <span class="soc-tile-value" id="sh-delayed">—</span>
-      <span class="soc-tile-sub">event terakhir &gt; 10 menit</span>
+      <span class="soc-tile-label">Sumber log bermasalah</span>
+      <span class="soc-tile-value" id="sh-bad">—</span>
+      <span class="soc-tile-sub"><b id="sh-delayed">—</b> terlambat · <b id="sh-down">—</b> mati</span>
     </div>
     <div class="soc-tile">
-      <span class="soc-tile-label">Sumber mati</span>
-      <span class="soc-tile-value" id="sh-down">—</span>
-      <span class="soc-tile-sub">tidak ada event &gt; 1 jam</span>
+      <span class="soc-tile-label">Error pipeline, 24 jam</span>
+      <span class="soc-tile-value" id="sh-err-tile">—</span>
+      <span class="soc-tile-sub">event gagal diproses</span>
     </div>
   </div>
 
   <div class="soc-grid">
     <section class="soc-card soc-wide">
-      <h2>Komponen SIEM</h2>
-      <p class="soc-card-note">Kondisi platform SIEM itu sendiri.</p>
+      <h2>Kesehatan cluster</h2>
+      <p class="soc-card-note">Pemakaian sumber daya tiap node. Nilai 80% ke atas ditandai kuning.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
-            <th>Komponen</th>
-            <th>Kondisi</th>
+            <th>Node</th>
+            <th class="soc-opt">Peran</th>
+            <th class="soc-num">CPU</th>
+            <th class="soc-num">Heap</th>
+            <th class="soc-num">Disk</th>
             <th>Status</th>
           </tr></thead>
-          <tbody id="tb-components"></tbody>
+          <tbody id="tb-nodes"></tbody>
         </table>
       </div>
     </section>
 
     <section class="soc-card soc-wide">
-      <h2>Kesehatan sumber log</h2>
-      <p class="soc-card-note">Event per detik (EPS) dan kapan event terakhir diterima SIEM.</p>
+      <h2>Monitoring ingestion</h2>
+      <p class="soc-card-note">Event per detik (EPS) dan kapan event terakhir diterima SIEM dari tiap sumber log.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -427,6 +767,111 @@ body::after {
             <th>Status</th>
           </tr></thead>
           <tbody id="tb-logs"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Status agen</h2>
+      <p class="soc-card-note">Agen pengumpul log di host.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Host</th>
+            <th class="soc-opt">OS</th>
+            <th class="soc-opt">Versi</th>
+            <th class="soc-num">Check-in</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody id="tb-agents"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Error pipeline</h2>
+      <p class="soc-card-note">Event yang gagal di-parse atau dikirim, 24 jam terakhir; waktu dalam UTC.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>Pipeline</th>
+            <th>Error</th>
+            <th class="soc-num">Jumlah</th>
+          </tr></thead>
+          <tbody id="tb-pipe"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</section>
+
+<!-- 8. Administration -->
+<section class="soc-view" id="view-admin" hidden>
+  <header class="soc-head">
+    <h1 class="soc-title">Administration</h1>
+    <p class="soc-lede"><b id="ad-users">—</b> pengguna aktif dengan <b id="ad-roles">—</b> peran; <b id="ad-nomfa">—</b> akun aktif belum memakai MFA dan <b id="ad-interr">—</b> integrasi bermasalah.</p>
+  </header>
+
+  <div class="soc-grid">
+    <section class="soc-card soc-wide">
+      <h2>Manajemen pengguna</h2>
+      <p class="soc-card-note">Akun yang punya akses ke dashboard; waktu dalam UTC.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Nama</th>
+            <th class="soc-opt">Email</th>
+            <th>Peran</th>
+            <th>MFA</th>
+            <th class="soc-num soc-opt">Login terakhir</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody id="tb-users"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Role-based access control (RBAC)</h2>
+      <p class="soc-card-note">Izin yang dimiliki tiap peran.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead id="th-rbac"></thead>
+          <tbody id="tb-rbac"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Pengaturan integrasi</h2>
+      <p class="soc-card-note">Sistem yang terhubung ke Beruk Sakti. Nyalakan atau matikan dari kolom Aktif.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Integrasi</th>
+            <th class="soc-opt">Tipe</th>
+            <th>Status</th>
+            <th class="soc-num">Sinkron terakhir</th>
+            <th class="c">Aktif</th>
+          </tr></thead>
+          <tbody id="tb-integrations"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Audit log</h2>
+      <p class="soc-card-note">Siapa melakukan apa. Perubahan yang Anda buat di halaman ini ikut tercatat; waktu dalam UTC.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>Pengguna</th>
+            <th>Aksi</th>
+            <th class="soc-opt">Target</th>
+          </tr></thead>
+          <tbody id="tb-audit"></tbody>
         </table>
       </div>
     </section>
@@ -497,12 +942,76 @@ const DATA = {
     {source: 'Cloud audit trail', type: 'Cloud', eps: 95, last_seen_min: 3, status: 'Healthy'},
     {source: 'Linux auditd', type: 'Endpoint', eps: 0, last_seen_min: 187, status: 'Down'},
   ],
-  siem_components: [
-    {name: 'Log collector / forwarder', detail: '9 agen, 1 tidak mengirim data', status: 'Warning'},
-    {name: 'Indexer cluster', detail: '3 node aktif, CPU rata-rata 61%', status: 'Healthy'},
-    {name: 'Correlation engine', detail: '412 rule aktif, lag 4 detik', status: 'Healthy'},
-    {name: 'Penyimpanan hot tier', detail: '78% terpakai, sisa sekitar 9 hari', status: 'Warning'},
-    {name: 'Kuota ingest harian', detail: '62 GB dari 100 GB', status: 'Healthy'},
+  top_threats: [
+    {name: 'Brute force VPN & RDP', category: 'Akses kredensial', alerts: 618, change: -0.12},
+    {name: 'Password spraying Active Directory', category: 'Akses kredensial', alerts: 312, change: 1.4},
+    {name: 'Cobalt Strike beacon', category: 'Command and control', alerts: 212, change: 0.8},
+    {name: 'Phishing kredensial Microsoft 365', category: 'Phishing', alerts: 146, change: 0.35},
+    {name: 'Pemindaian dari internet', category: 'Pengintaian', alerts: 95, change: -0.3},
+  ],
+  analysts: ['Rina', 'Bagus', 'Dimas', 'Sari'],
+  alerts: [
+    {id: 'ALR-90412', time: '2026-11-02T08:21:00Z', rule: 'Beacon ke IP C2 yang dikenal', source: 'EDR', severity: 'Critical', asset: 'FIN-WS-0231', assignee: 'Rina', status: 'Escalated'},
+    {id: 'ALR-90411', time: '2026-11-02T08:16:00Z', rule: 'Push MFA ditolak berulang', source: 'Identity', severity: 'High', asset: 'admin.it', assignee: '', status: 'New'},
+    {id: 'ALR-90410', time: '2026-11-02T08:05:00Z', rule: 'Login dari negara yang tidak biasa', source: 'Identity', severity: 'Critical', asset: 'admin.it', assignee: 'Bagus', status: 'In triage'},
+    {id: 'ALR-90409', time: '2026-11-02T07:58:00Z', rule: 'DLL tanpa tanda tangan dimuat rundll32', source: 'EDR', severity: 'High', asset: 'FIN-WS-0231', assignee: 'Rina', status: 'Escalated'},
+    {id: 'ALR-90408', time: '2026-11-02T07:44:00Z', rule: 'Kegagalan autentikasi SMB massal', source: 'Windows', severity: 'Critical', asset: 'DC-02', assignee: 'Dimas', status: 'In triage'},
+    {id: 'ALR-90407', time: '2026-11-02T07:30:00Z', rule: 'Port scan internal', source: 'IDS', severity: 'Medium', asset: '10.20.4.17', assignee: '', status: 'New'},
+    {id: 'ALR-90406', time: '2026-11-02T07:12:00Z', rule: 'SQL injection diblokir WAF', source: 'WAF', severity: 'Medium', asset: 'WEB-PROD-01', assignee: '', status: 'New'},
+    {id: 'ALR-90405', time: '2026-11-02T06:55:00Z', rule: 'Email phishing lolos filter', source: 'Email', severity: 'High', asset: 'Email gateway', assignee: 'Sari', status: 'In triage'},
+    {id: 'ALR-90404', time: '2026-11-02T06:40:00Z', rule: 'Akun terkunci setelah 10 kali gagal', source: 'Identity', severity: 'Low', asset: 'user.hr07', assignee: '', status: 'New'},
+    {id: 'ALR-90403', time: '2026-11-02T06:22:00Z', rule: 'PowerShell dengan perintah ter-encode', source: 'EDR', severity: 'High', asset: 'HR-LT-0118', assignee: 'Dimas', status: 'Escalated'},
+    {id: 'ALR-90402', time: '2026-11-02T05:58:00Z', rule: 'Upload besar ke cloud storage', source: 'Proxy', severity: 'Medium', asset: 'FS-01', assignee: 'Sari', status: 'Closed - TP'},
+    {id: 'ALR-90401', time: '2026-11-02T05:31:00Z', rule: 'Antivirus mendeteksi adware', source: 'EDR', severity: 'Low', asset: 'SALES-LT-0092', assignee: 'Bagus', status: 'Closed - FP'},
+    {id: 'ALR-90400', time: '2026-11-02T05:02:00Z', rule: 'Brute force VPN diblokir', source: 'Firewall', severity: 'Low', asset: 'VPN-GW', assignee: '', status: 'New'},
+    {id: 'ALR-90399', time: '2026-11-02T04:47:00Z', rule: 'Scheduled task baru dibuat', source: 'Windows', severity: 'Medium', asset: 'APP-SRV-07', assignee: 'Rina', status: 'In triage'},
+  ],
+  ai_investigations: [
+    {
+      id: 'INC-2611-041', verdict: 'Kemungkinan besar true positive', confidence: 0.92, risk: 94,
+      summary: 'FIN-WS-0231 menghubungi server C2 kira-kira setiap 60 detik dengan jitter rendah, pola khas beacon Cobalt Strike. Prosesnya rundll32.exe yang memuat DLL dari folder Temp.',
+      correlated: [
+        {t: '06:30', src: 'Windows', ev: '1.240 kegagalan login SMB ke DC-02, salah satunya dari FIN-WS-0231'},
+        {t: '07:58', src: 'EDR', ev: 'rundll32.exe memuat upd.dll dari %TEMP%'},
+        {t: '07:58', src: 'Firewall', ev: 'HTTPS keluar ke 185.220.101.47:443 tiap ±60 detik'},
+        {t: '08:14', src: 'TI', ev: '185.220.101.47 cocok dengan IOC Abuse.ch (Cobalt Strike C2)'},
+      ],
+      findings: ['Beacon HTTPS ke 185.220.101.47 sejak 07:58 UTC', 'DLL tanpa tanda tangan dimuat dari %TEMP%', 'Kemungkinan terkait password spraying di INC-2611-039'],
+      actions: ['Isolasi FIN-WS-0231 lewat EDR', 'Blokir 185.220.101.47 di firewall perimeter', 'Cari hash DLL yang sama di host lain'],
+    },
+    {
+      id: 'INC-2611-040', verdict: 'Perlu konfirmasi pemilik akun', confidence: 0.78, risk: 88,
+      summary: 'Akun admin login dari Jakarta lalu 14 menit kemudian dari Amsterdam, didahului 23 permintaan MFA yang ditolak. Pola ini cocok dengan serangan MFA fatigue.',
+      correlated: [
+        {t: '07:43', src: 'Identity', ev: '23 push MFA untuk admin.it ditolak dalam 9 menit'},
+        {t: '07:52', src: 'Identity', ev: 'Login berhasil dari IP hosting di Belanda'},
+        {t: '07:53', src: 'Cloud', ev: 'Token baru dipakai membaca daftar pengguna direktori'},
+      ],
+      findings: ['Login berhasil dari IP hosting di Belanda', 'Token sudah dipakai membaca direktori pengguna', 'Belum ada perubahan izin atau aturan mailbox'],
+      actions: ['Cabut semua sesi aktif akun admin', 'Hubungi pemilik akun lewat kanal terpisah', 'Aktifkan number matching untuk MFA'],
+    },
+    {
+      id: 'INC-2611-039', verdict: 'Kemungkinan besar true positive', confidence: 0.85, risk: 81,
+      summary: '1.240 kegagalan autentikasi SMB ke DC-02 dari 3 host internal dalam 10 menit. Polanya konsisten dengan password spraying setelah penyerang mendapat akses awal.',
+      correlated: [
+        {t: '06:30', src: 'Windows', ev: 'Event 4625 massal dari 3 host di VLAN keuangan'},
+        {t: '06:41', src: 'Windows', ev: 'svc-backup berhasil login setelah 312 percobaan'},
+        {t: '06:44', src: 'Windows', ev: 'svc-backup membuka share ADMIN$ di DC-02'},
+      ],
+      findings: ['3 host sumber, semuanya di VLAN keuangan', '1 akun layanan berhasil login setelah 312 percobaan', 'Waktunya dekat dengan beacon di INC-2611-041'],
+      actions: ['Reset kata sandi svc-backup', 'Batasi SMB dari VLAN keuangan ke DC', 'Gabungkan dengan INC-2611-041 dalam satu kasus'],
+    },
+    {
+      id: 'INC-2611-037', verdict: 'Mencurigakan, perlu konteks', confidence: 0.64, risk: 58,
+      summary: 'PowerShell dengan perintah ter-encode Base64 dijalankan dari makro dokumen Word. Perintahnya mengunduh skrip, tetapi domain tujuan sudah tidak aktif.',
+      correlated: [
+        {t: '22:46', src: 'Email', ev: 'Lampiran invoice_okt.docm diterima HR-LT-0118'},
+        {t: '22:47', src: 'EDR', ev: 'WINWORD.EXE menjalankan powershell -enc …'},
+        {t: '22:47', src: 'Proxy', ev: 'DNS gagal untuk cdn-update-check.net'},
+      ],
+      findings: ['Proses induk WINWORD.EXE', 'Domain unduhan tidak bisa di-resolve', 'Tidak ada koneksi keluar lanjutan dari host'],
+      actions: ['Ambil salinan dokumen untuk dianalisis', 'Periksa apakah dokumen yang sama diterima pengguna lain', 'Pindai penuh HR-LT-0118'],
+    },
   ],
   ti_feeds: [
     {feed: 'AlienVault OTX', indicators: 48210, synced_min: 35},
@@ -512,38 +1021,143 @@ const DATA = {
     {feed: 'IOC internal', indicators: 640, synced_min: 240},
   ],
   iocs: [
-    {indicator: '45.155.205.233', type: 'IP', threat: 'Brute force VPN', feed: 'AlienVault OTX', hits: 1830, last_seen: '2026-11-02T07:40:00Z', incident: 'INC-2610-031'},
-    {indicator: '185.220.101.47', type: 'IP', threat: 'Cobalt Strike C2', feed: 'Abuse.ch', hits: 212, last_seen: '2026-11-02T08:20:00Z', incident: 'INC-2611-041'},
-    {indicator: '103.75.190.12', type: 'IP', threat: 'Pemindai internet', feed: 'MISP komunitas', hits: 95, last_seen: '2026-11-01T21:02:00Z', incident: ''},
-    {indicator: 'login-microsoftonline-secure.com', type: 'Domain', threat: 'Phishing kredensial', feed: 'OpenPhish', hits: 46, last_seen: '2026-11-02T05:15:00Z', incident: 'INC-2611-038'},
-    {indicator: 'transfer-files.cloud', type: 'Domain', threat: 'Exfiltrasi data', feed: 'IOC internal', hits: 18, last_seen: '2026-10-31T14:30:00Z', incident: 'INC-2610-035'},
-    {indicator: '9f2c1d7e…5b84a', type: 'SHA-256', threat: 'Loader DLL Cobalt Strike', feed: 'Abuse.ch', hits: 3, last_seen: '2026-11-02T08:01:00Z', incident: 'INC-2611-041'},
+    {indicator: '45.155.205.233', type: 'IP', verdict: 'Malicious', score: 91, threat: 'Brute force VPN', feed: 'AlienVault OTX', country: 'Rusia', asn: 'AS49505 Selectel', first_seen: '2026-08-14', tags: ['brute-force', 'vpn'], hits: 1830, last_seen: '2026-11-02T07:40:00Z', incident: 'INC-2610-031'},
+    {indicator: '185.220.101.47', type: 'IP', verdict: 'Malicious', score: 97, threat: 'Cobalt Strike C2', feed: 'Abuse.ch', country: 'Jerman', asn: 'AS60729 Stiftung Erneuerbare Freiheit', first_seen: '2026-10-29', tags: ['c2', 'cobalt-strike'], hits: 212, last_seen: '2026-11-02T08:20:00Z', incident: 'INC-2611-041'},
+    {indicator: '103.75.190.12', type: 'IP', verdict: 'Suspicious', score: 54, threat: 'Pemindai internet', feed: 'MISP komunitas', country: 'Vietnam', asn: 'AS131414 Long Van', first_seen: '2026-06-02', tags: ['scanner'], hits: 95, last_seen: '2026-11-01T21:02:00Z', incident: ''},
+    {indicator: 'login-microsoftonline-secure.com', type: 'Domain', verdict: 'Malicious', score: 95, threat: 'Phishing kredensial', feed: 'OpenPhish', country: 'Amerika Serikat', asn: 'AS13335 Cloudflare', first_seen: '2026-10-31', tags: ['phishing', 'm365'], hits: 46, last_seen: '2026-11-02T05:15:00Z', incident: 'INC-2611-038'},
+    {indicator: 'transfer-files.cloud', type: 'Domain', verdict: 'Suspicious', score: 67, threat: 'Exfiltrasi data', feed: 'IOC internal', country: 'Belanda', asn: 'AS206264 Amarutu', first_seen: '2026-10-30', tags: ['exfiltration', 'file-sharing'], hits: 18, last_seen: '2026-10-31T14:30:00Z', incident: 'INC-2610-035'},
+    {indicator: '9f2c1d7e4a8b3c6d5e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9015b84a', type: 'SHA-256', verdict: 'Malicious', score: 99, threat: 'Loader DLL Cobalt Strike', feed: 'Abuse.ch', country: '—', asn: '—', first_seen: '2026-10-27', tags: ['loader', 'cobalt-strike'], hits: 3, last_seen: '2026-11-02T08:01:00Z', incident: 'INC-2611-041'},
   ],
-  ai_investigations: [
+  // Known-good entries the lookup can answer, but that never matched as threats
+  reputation_extra: [
+    {indicator: '8.8.8.8', type: 'IP', verdict: 'Clean', score: 2, threat: '—', feed: '—', country: 'Amerika Serikat', asn: 'AS15169 Google LLC', first_seen: '—', tags: ['dns-publik'], hits: 0, last_seen: '', incident: ''},
+    {indicator: 'microsoft.com', type: 'Domain', verdict: 'Clean', score: 1, threat: '—', feed: '—', country: 'Amerika Serikat', asn: 'AS8075 Microsoft', first_seen: '—', tags: ['layanan-tepercaya'], hits: 0, last_seen: '', incident: ''},
+  ],
+  cases: [
     {
-      id: 'INC-2611-041', verdict: 'Kemungkinan besar true positive', confidence: 0.92,
-      summary: 'FIN-WS-0231 menghubungi server C2 kira-kira setiap 60 detik dengan jitter rendah, pola khas beacon Cobalt Strike. Prosesnya rundll32.exe yang memuat DLL dari folder Temp.',
-      findings: ['Beacon HTTPS ke 185.220.101.47 sejak 07:58 UTC', 'DLL tanpa tanda tangan dimuat dari %TEMP%', 'IP tujuan cocok dengan IOC Abuse.ch (Cobalt Strike C2)'],
-      actions: ['Isolasi FIN-WS-0231 lewat EDR', 'Blokir 185.220.101.47 di firewall perimeter', 'Cari hash DLL yang sama di host lain'],
+      id: 'CASE-118', title: 'Intrusi Cobalt Strike di jaringan keuangan', severity: 'Critical', owner: 'Rina', status: 'Investigating',
+      incidents: ['INC-2611-041', 'INC-2611-039'], sla_left_min: 170,
+      timeline: [
+        {t: '2026-11-02T06:30:00Z', who: 'SIEM', what: 'Alert kegagalan autentikasi SMB massal ke DC-02'},
+        {t: '2026-11-02T07:58:00Z', who: 'EDR', what: 'Beacon pertama dari FIN-WS-0231 ke 185.220.101.47'},
+        {t: '2026-11-02T08:14:00Z', who: 'SIEM', what: 'INC-2611-041 dibuat otomatis dari korelasi EDR dan firewall'},
+        {t: '2026-11-02T08:20:00Z', who: 'Rina', what: 'Kasus dibuka; INC-2611-039 digabungkan karena host dan waktu berdekatan'},
+        {t: '2026-11-02T08:26:00Z', who: 'Automation', what: 'Playbook isolasi host meminta persetujuan untuk FIN-WS-0231'},
+        {t: '2026-11-02T08:31:00Z', who: 'Rina', what: 'Hash upd.dll dikirim ke sandbox untuk dianalisis'},
+      ],
     },
     {
-      id: 'INC-2611-040', verdict: 'Perlu konfirmasi pemilik akun', confidence: 0.78,
-      summary: 'Akun admin login dari Jakarta lalu 14 menit kemudian dari Amsterdam, didahului 23 permintaan MFA yang ditolak. Pola ini cocok dengan serangan MFA fatigue.',
-      findings: ['23 push MFA ditolak dalam 9 menit', 'Login berhasil dari IP hosting di Belanda', 'Belum ada perubahan izin atau aturan mailbox'],
-      actions: ['Cabut semua sesi aktif akun admin', 'Hubungi pemilik akun lewat kanal terpisah', 'Aktifkan number matching untuk MFA'],
+      id: 'CASE-117', title: 'Pengambilalihan akun admin lewat MFA fatigue', severity: 'Critical', owner: 'Bagus', status: 'Open',
+      incidents: ['INC-2611-040'], sla_left_min: 95,
+      timeline: [
+        {t: '2026-11-02T07:43:00Z', who: 'Identity', what: '23 push MFA ditolak untuk admin.it'},
+        {t: '2026-11-02T07:52:00Z', who: 'SIEM', what: 'INC-2611-040 dibuat dari rule impossible travel'},
+        {t: '2026-11-02T08:03:00Z', who: 'Automation', what: 'Playbook reset sesi meminta persetujuan'},
+        {t: '2026-11-02T08:10:00Z', who: 'Bagus', what: 'Kasus diambil; menghubungi pemilik akun lewat telepon'},
+      ],
     },
     {
-      id: 'INC-2611-039', verdict: 'Kemungkinan besar true positive', confidence: 0.85,
-      summary: '1.240 kegagalan autentikasi SMB ke DC-02 dari 3 host internal dalam 10 menit. Polanya konsisten dengan password spraying setelah penyerang mendapat akses awal.',
-      findings: ['3 host sumber, semuanya di VLAN keuangan', '1 akun layanan berhasil login setelah 312 percobaan', 'Waktu mulai dekat dengan beacon di INC-2611-041'],
-      actions: ['Reset kata sandi akun layanan yang berhasil login', 'Batasi SMB dari VLAN keuangan ke DC', 'Gabungkan dengan INC-2611-041 sebagai satu kasus'],
+      id: 'CASE-116', title: 'Kampanye phishing kredensial ke 46 pengguna', severity: 'High', owner: 'Sari', status: 'Contained',
+      incidents: ['INC-2611-038'], sla_left_min: 300,
+      timeline: [
+        {t: '2026-11-02T05:11:00Z', who: 'Email', what: 'Email dengan tautan login-microsoftonline-secure.com terkirim ke 46 pengguna'},
+        {t: '2026-11-02T05:20:00Z', who: 'Automation', what: 'Playbook karantina email menarik 46 pesan dari kotak surat'},
+        {t: '2026-11-02T05:48:00Z', who: 'Sari', what: '2 pengguna yang sempat mengeklik tautan diminta mengganti kata sandi'},
+      ],
     },
     {
-      id: 'INC-2611-037', verdict: 'Mencurigakan, perlu konteks', confidence: 0.64,
-      summary: 'PowerShell dengan perintah ter-encode Base64 dijalankan dari makro dokumen Word. Perintahnya mengunduh skrip, tetapi domain tujuan sudah tidak aktif.',
-      findings: ['Proses induk WINWORD.EXE', 'Domain unduhan tidak bisa di-resolve', 'Tidak ada koneksi keluar lanjutan dari host'],
-      actions: ['Ambil salinan dokumen untuk dianalisis', 'Periksa apakah dokumen yang sama diterima pengguna lain', 'Pindai penuh HR-LT-0118'],
+      id: 'CASE-115', title: 'Exfiltrasi 2,1 GB ke cloud storage', severity: 'High', owner: 'Dimas', status: 'Contained',
+      incidents: ['INC-2610-035'], sla_left_min: -45,
+      timeline: [
+        {t: '2026-10-31T14:20:00Z', who: 'Proxy', what: 'Upload 2,1 GB dari FS-01 ke transfer-files.cloud'},
+        {t: '2026-10-31T14:35:00Z', who: 'Dimas', what: 'Domain diblokir di proxy, akun pengunggah dinonaktifkan'},
+        {t: '2026-11-01T10:00:00Z', who: 'Dimas', what: 'Menunggu daftar file dari tim pemilik data untuk penilaian dampak'},
+      ],
     },
+  ],
+  automation_stats: {runs_24h: 186, success: 0.96, saved_hours: 31},
+  playbooks: [
+    {name: 'Pengayaan IOC otomatis', trigger: 'Setiap alert baru', runs: 1240, success: 0.99, approval: false, enabled: true},
+    {name: 'Blokir IP berbahaya di firewall', trigger: 'IP cocok dengan IOC berskor ≥ 90', runs: 62, success: 0.98, approval: false, enabled: true},
+    {name: 'Karantina email phishing', trigger: 'Laporan phishing dari pengguna', runs: 31, success: 0.9, approval: false, enabled: true},
+    {name: 'Isolasi host terinfeksi', trigger: 'Alert EDR severity Critical', runs: 14, success: 0.93, approval: true, enabled: true},
+    {name: 'Reset sesi & paksa ganti kata sandi', trigger: 'Login mencurigakan di identity provider', runs: 9, success: 1, approval: true, enabled: true},
+    {name: 'Nonaktifkan akun yang terkunci berulang', trigger: 'Akun terkunci > 3 kali dalam 1 jam', runs: 0, success: 0, approval: true, enabled: false},
+  ],
+  runs: [
+    {time: '2026-11-02T08:29:00Z', playbook: 'Pengayaan IOC otomatis', target: 'ALR-90412', duration: '—', status: 'Running'},
+    {time: '2026-11-02T08:26:00Z', playbook: 'Isolasi host terinfeksi', target: 'FIN-WS-0231', duration: '—', status: 'Waiting approval'},
+    {time: '2026-11-02T08:15:00Z', playbook: 'Blokir IP berbahaya di firewall', target: '185.220.101.47', duration: '11 dtk', status: 'Success'},
+    {time: '2026-11-02T08:03:00Z', playbook: 'Reset sesi & paksa ganti kata sandi', target: 'admin.it', duration: '—', status: 'Waiting approval'},
+    {time: '2026-11-02T06:58:00Z', playbook: 'Pengayaan IOC otomatis', target: 'ALR-90405', duration: '3 dtk', status: 'Success'},
+    {time: '2026-11-02T06:31:00Z', playbook: 'Blokir IP berbahaya di firewall', target: '103.75.190.12', duration: '30 dtk', status: 'Failed'},
+    {time: '2026-11-02T05:20:00Z', playbook: 'Karantina email phishing', target: '46 kotak surat', duration: '38 dtk', status: 'Success'},
+    {time: '2026-11-01T22:49:00Z', playbook: 'Isolasi host terinfeksi', target: 'HR-LT-0118', duration: '—', status: 'Waiting approval'},
+  ],
+  approvals: [
+    {id: 'APR-311', playbook: 'Isolasi host terinfeksi', action: 'Isolasi FIN-WS-0231 dari jaringan', target: 'FIN-WS-0231', ref: 'CASE-118', requested: '2026-11-02T08:26:00Z', decision: ''},
+    {id: 'APR-310', playbook: 'Reset sesi & paksa ganti kata sandi', action: 'Cabut semua sesi dan reset kata sandi admin.it', target: 'admin.it', ref: 'CASE-117', requested: '2026-11-02T08:03:00Z', decision: ''},
+    {id: 'APR-309', playbook: 'Isolasi host terinfeksi', action: 'Isolasi HR-LT-0118 dari jaringan', target: 'HR-LT-0118', ref: 'INC-2611-037', requested: '2026-11-01T22:49:00Z', decision: ''},
+  ],
+  nodes: [
+    {node: 'idx-01', role: 'Master + data', cpu: 0.58, heap: 0.71, disk: 0.76, status: 'Healthy'},
+    {node: 'idx-02', role: 'Data', cpu: 0.64, heap: 0.69, disk: 0.86, status: 'Warning'},
+    {node: 'idx-03', role: 'Data', cpu: 0.61, heap: 0.66, disk: 0.77, status: 'Healthy'},
+    {node: 'corr-01', role: 'Correlation engine', cpu: 0.42, heap: 0.55, disk: 0.34, status: 'Healthy'},
+    {node: 'ingest-01', role: 'Ingest pipeline', cpu: 0.73, heap: 0.62, disk: 0.41, status: 'Healthy'},
+  ],
+  agents: [
+    {host: 'FIN-WS-0231', os: 'Windows 11', version: '8.15.2', last_min: 0, status: 'Healthy'},
+    {host: 'DC-02', os: 'Windows Server 2022', version: '8.15.2', last_min: 1, status: 'Healthy'},
+    {host: 'FS-01', os: 'Windows Server 2019', version: '8.15.2', last_min: 2, status: 'Healthy'},
+    {host: 'APP-SRV-07', os: 'Ubuntu 22.04', version: '8.15.2', last_min: 0, status: 'Healthy'},
+    {host: 'WEB-PROD-01', os: 'Ubuntu 22.04', version: '8.15.2', last_min: 0, status: 'Healthy'},
+    {host: 'HR-LT-0118', os: 'Windows 11', version: '8.13.1', last_min: 22, status: 'Delayed'},
+    {host: 'LNX-DB-03', os: 'RHEL 9', version: '8.14.0', last_min: 187, status: 'Down'},
+  ],
+  pipeline_errors: [
+    {time: '2026-11-02T08:12:00Z', pipeline: 'ids-suricata', error: 'Format timestamp tidak dikenal, event dibuang', count: 1284},
+    {time: '2026-11-02T07:31:00Z', pipeline: 'waf', error: 'Field client.ip kosong', count: 212},
+    {time: '2026-11-02T06:05:00Z', pipeline: 'cloud-audit', error: 'Rate limit API (HTTP 429), dicoba ulang', count: 37},
+    {time: '2026-11-02T05:14:00Z', pipeline: 'linux-auditd', error: 'Koneksi dari forwarder LNX-DB-03 terputus', count: 1},
+  ],
+  users: [
+    {name: 'Andi Hidayat', email: 'andi@beruksakti.local', role: 'SOC Manager', mfa: true, last_login: '2026-11-02T07:02:00Z', active: true},
+    {name: 'Dimas Saputra', email: 'dimas@beruksakti.local', role: 'SOC Analyst T3', mfa: true, last_login: '2026-11-02T06:15:00Z', active: true},
+    {name: 'Rina Wulandari', email: 'rina@beruksakti.local', role: 'SOC Analyst T2', mfa: true, last_login: '2026-11-02T06:58:00Z', active: true},
+    {name: 'Bagus Pratama', email: 'bagus@beruksakti.local', role: 'SOC Analyst T1', mfa: true, last_login: '2026-11-02T07:05:00Z', active: true},
+    {name: 'Sari Lestari', email: 'sari@beruksakti.local', role: 'SOC Analyst T1', mfa: false, last_login: '2026-11-02T04:50:00Z', active: true},
+    {name: 'Admin Platform', email: 'admin@beruksakti.local', role: 'Administrator', mfa: true, last_login: '2026-11-02T07:55:00Z', active: true},
+    {name: 'Auditor Eksternal', email: 'audit@mitra.local', role: 'Read-only', mfa: false, last_login: '2026-10-20T09:12:00Z', active: false},
+  ],
+  // Each role's grants line up with the permissions list: '1' = allowed
+  rbac: {
+    permissions: ['Lihat dashboard', 'Triage alert', 'Kelola insiden & kasus', 'Jalankan playbook', 'Setujui aksi otomatis', 'Kelola integrasi', 'Kelola pengguna & peran', 'Lihat audit log'],
+    roles: [
+      {role: 'Administrator', grants: '11111111'},
+      {role: 'SOC Manager', grants: '11111001'},
+      {role: 'SOC Analyst T3', grants: '11111000'},
+      {role: 'SOC Analyst T2', grants: '11110000'},
+      {role: 'SOC Analyst T1', grants: '11000000'},
+      {role: 'Read-only', grants: '10000001'},
+    ],
+  },
+  integrations: [
+    {name: 'Elastic SIEM', type: 'SIEM', status: 'Terhubung', synced_min: 2, enabled: true},
+    {name: 'CrowdStrike Falcon', type: 'EDR', status: 'Terhubung', synced_min: 1, enabled: true},
+    {name: 'Microsoft Entra ID', type: 'Identity', status: 'Terhubung', synced_min: 4, enabled: true},
+    {name: 'Palo Alto NGFW', type: 'Firewall', status: 'Terhubung', synced_min: 1, enabled: true},
+    {name: 'VirusTotal', type: 'Threat intel', status: 'Error: kuota API habis', synced_min: 95, enabled: true},
+    {name: 'Slack #soc-alerts', type: 'Notifikasi', status: 'Terhubung', synced_min: 0, enabled: true},
+    {name: 'Jira Service Management', type: 'Ticketing', status: 'Nonaktif', synced_min: null, enabled: false},
+  ],
+  audit: [
+    {time: '2026-11-02T08:31:00Z', user: 'Rina Wulandari', action: 'Mengirim hash ke sandbox', target: 'CASE-118'},
+    {time: '2026-11-02T08:20:00Z', user: 'Rina Wulandari', action: 'Membuat kasus dan menggabungkan INC-2611-039', target: 'CASE-118'},
+    {time: '2026-11-02T07:55:00Z', user: 'Admin Platform', action: 'Mengganti API key integrasi', target: 'VirusTotal'},
+    {time: '2026-11-02T07:10:00Z', user: 'Andi Hidayat', action: 'Mengubah ambang rule dari 10 menjadi 20 percobaan', target: 'Brute force VPN'},
+    {time: '2026-11-01T17:02:00Z', user: 'Admin Platform', action: 'Menonaktifkan pengguna', target: 'Auditor Eksternal'},
+    {time: '2026-11-01T09:15:00Z', user: 'Andi Hidayat', action: 'Menonaktifkan playbook', target: 'Nonaktifkan akun yang terkunci berulang'},
   ],
 };
 
@@ -799,40 +1413,397 @@ function drawTactics() {
 }
 
 // ---- Tables ----
+function el(tag, cls, text, parent) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
 function td(tr, text, cls) {
-  const c = document.createElement('td');
-  if (cls) c.className = cls;
-  c.textContent = text;
-  tr.appendChild(c);
+  return el('td', cls, text, tr);
 }
 
 function chip(tr, text, cls) {
-  const c = document.createElement('td');
-  const s = document.createElement('span');
-  s.className = 'soc-chip ' + cls;
-  s.textContent = text;
-  c.appendChild(s);
-  tr.appendChild(c);
+  const c = el('td', null, null, tr);
+  el('span', 'soc-chip ' + cls, text, c);
+  return c;
+}
+
+// Colour for any status word used on the page
+function tone(s) {
+  if (/^(Healthy|Success|Terhubung|Aktif|Green|Disetujui|Clean|Contained)/.test(s)) return 'ok';
+  if (/^(Warning|Delayed|Waiting|Yellow|Suspicious|Belum|Open|New)/.test(s)) return 'warn';
+  if (/^(Down|Failed|Error|Red|Malicious|Ditolak)/.test(s)) return 'bad';
+  if (/^(Running|Investigating|In triage|Escalated)/.test(s)) return 'info';
+  return 'muted';
+}
+
+function statusChip(tr, s) {
+  return chip(tr, s, 'tone-' + tone(s));
+}
+
+function sevChip(tr, s) {
+  return chip(tr, s, 'chip-' + s.toLowerCase());
+}
+
+function opt(sel, value, label) {
+  const o = el('option', null, label == null ? value : label, sel);
+  o.value = value;
+  return o;
 }
 
 function ago(m) {
+  if (m == null) return '—';
   if (m < 1) return 'baru saja';
   if (m < 60) return m + ' mnt lalu';
   return Math.floor(m / 60) + ' j ' + (m % 60) + ' mnt lalu';
 }
 
-function drawLogs() {
-  const tb = $('tb-logs');
-  const order = {Down: 0, Delayed: 1, Healthy: 2};
+function dur(m) {
+  return m >= 60 ? Math.floor(m / 60) + ' j ' + (m % 60) + ' mnt' : m + ' mnt';
+}
+
+const fmtTime = (iso) => (iso ? fmtOpened(new Date(iso)) : '—');
+const shortIoc = (s) => (s.length > 28 ? s.slice(0, 12) + '…' + s.slice(-6) : s);
+
+function toggle(tr, on, label, onChange) {
+  const c = el('td', 'c', null, tr);
+  const w = el('label', 'switch', null, c);
+  const i = el('input', null, null, w);
+  i.type = 'checkbox';
+  i.checked = on;
+  i.setAttribute('aria-label', label);
+  el('span', null, null, w);
+  i.addEventListener('change', () => onChange(i.checked));
+  return c;
+}
+
+// ---- Audit trail (also records what the viewer changes on this page) ----
+function audit(action, target) {
+  DATA.audit.push({time: new Date().toISOString(), user: 'Anda (sesi ini)', action, target});
+  drawAudit();
+}
+
+function drawAudit() {
+  const tb = $('tb-audit');
   tb.replaceChildren();
-  [...logs].sort((a, b) => (order[a.status] - order[b.status]) || (b.eps - a.eps)).forEach((r) => {
-    const tr = document.createElement('tr');
-    td(tr, r.source);
-    td(tr, r.type, 'soc-opt');
-    td(tr, fmtInt(r.eps), 'soc-num');
-    td(tr, ago(r.last_seen_min), 'soc-num');
-    chip(tr, r.status, 'st-' + r.status.toLowerCase());
-    tb.appendChild(tr);
+  [...DATA.audit].sort((a, b) => b.time.localeCompare(a.time)).forEach((r) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, fmtTime(r.time), 'soc-num');
+    td(tr, r.user);
+    td(tr, r.action);
+    td(tr, r.target, 'soc-opt');
+  });
+}
+
+// ---- 1. SOC Overview: severity distribution and top threats ----
+function drawOverview() {
+  const last7 = days.slice(-7);
+  const prev7 = days.slice(-14, -7);
+  const sum = (rows, k) => rows.reduce((s, r) => s + r[k], 0);
+  const total = KEYS.reduce((s, k) => s + sum(last7, k), 0);
+
+  const bar = $('sev-bar');
+  const tb = $('tb-sev');
+  bar.replaceChildren();
+  tb.replaceChildren();
+  KEYS.forEach((k) => {
+    const n = sum(last7, k);
+    const seg = el('span', null, null, bar);
+    seg.style.width = (n / total) * 100 + '%';
+    seg.style.background = SEV[k];
+    seg.title = SEV_LABEL[k] + ': ' + fmtInt(n);
+
+    const tr = el('tr', null, null, tb);
+    const name = td(tr, null);
+    el('span', 'soc-sw', null, name).style.background = SEV[k];
+    name.append(' ' + SEV_LABEL[k]);
+    td(tr, fmtInt(n), 'soc-num');
+    td(tr, fmtPct(n / total, 1), 'soc-num');
+    const p = sum(prev7, k);
+    setDelta(el('b', null, null, td(tr, null, 'soc-num')), p ? (n - p) / p : 0);
+  });
+
+  const th = $('tb-threats');
+  th.replaceChildren();
+  [...DATA.top_threats].sort((a, b) => b.alerts - a.alerts).forEach((r) => {
+    const tr = el('tr', null, null, th);
+    td(tr, r.name);
+    td(tr, r.category, 'soc-opt');
+    td(tr, fmtInt(r.alerts), 'soc-num');
+    setDelta(el('b', null, null, td(tr, null, 'soc-num')), r.change);
+  });
+}
+
+// ---- 2. Alert Management ----
+const ALERT_STATUSES = ['New', 'In triage', 'Escalated', 'Closed - TP', 'Closed - FP'];
+const isClosed = (s) => s.startsWith('Closed');
+ALERT_STATUSES.forEach((s) => opt($('am-status'), s));
+DATA.analysts.forEach((a) => opt($('am-owner'), a));
+
+function alertStats() {
+  const n = (f) => DATA.alerts.filter(f).length;
+  const unassigned = n((r) => !r.assignee && !isClosed(r.status));
+  $('am-new').textContent = fmtInt(n((r) => r.status === 'New'));
+  $('am-unassigned').textContent = fmtInt(unassigned);
+  $('am-esc').textContent = fmtInt(n((r) => r.status === 'Escalated'));
+  $('am-t-queue').textContent = fmtInt(n((r) => !isClosed(r.status)));
+  $('am-t-new').textContent = fmtInt(n((r) => r.status === 'New'));
+  $('am-t-triage').textContent = fmtInt(n((r) => r.status === 'In triage'));
+  $('am-t-esc').textContent = fmtInt(n((r) => r.status === 'Escalated'));
+  $('am-t-closed').textContent = fmtInt(n((r) => isClosed(r.status)));
+  $('am-t-fp').textContent = fmtInt(n((r) => r.status === 'Closed - FP'));
+  $('badge-alerts').textContent = fmtInt(unassigned);
+  $('badge-alerts').hidden = unassigned === 0;
+}
+
+function drawAlerts() {
+  const q = $('am-search').value.trim().toLowerCase();
+  const sev = $('am-sev').value;
+  const st = $('am-status').value;
+  const ow = $('am-owner').value;
+  const rows = DATA.alerts.filter((r) =>
+    (!sev || r.severity === sev) &&
+    (st === '' || (st === 'open' ? !isClosed(r.status) : r.status === st)) &&
+    (!ow || (ow === '-' ? !r.assignee : r.assignee === ow)) &&
+    (!q || [r.id, r.rule, r.asset, r.source].join(' ').toLowerCase().includes(q))
+  ).sort((a, b) => b.time.localeCompare(a.time));
+
+  const tb = $('tb-alerts');
+  tb.replaceChildren();
+  rows.forEach((r) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, r.id, 'soc-mono');
+    td(tr, fmtTime(r.time), 'soc-num');
+    sevChip(tr, r.severity);
+    td(tr, r.rule);
+    td(tr, r.source, 'soc-opt');
+    td(tr, r.asset, 'soc-opt soc-mono');
+
+    const who = el('select', 'soc-select soc-select-sm', null, td(tr, null));
+    who.setAttribute('aria-label', 'Analis untuk ' + r.id);
+    opt(who, '', '— Belum ditugaskan —');
+    DATA.analysts.forEach((a) => opt(who, a));
+    who.value = r.assignee;
+    who.addEventListener('change', () => {
+      r.assignee = who.value;
+      audit(who.value ? 'Menugaskan alert ke ' + who.value : 'Melepas penugasan alert', r.id);
+      alertStats();
+      drawAlerts();
+    });
+
+    const stSel = el('select', 'soc-select soc-select-sm tone-' + tone(r.status), null, td(tr, null));
+    stSel.setAttribute('aria-label', 'Status triage ' + r.id);
+    ALERT_STATUSES.forEach((s) => opt(stSel, s));
+    stSel.value = r.status;
+    stSel.addEventListener('change', () => {
+      r.status = stSel.value;
+      audit('Mengubah status triage menjadi ' + stSel.value, r.id);
+      alertStats();
+      drawAlerts();
+    });
+  });
+  $('am-nomatch').hidden = rows.length > 0;
+}
+['am-search', 'am-sev', 'am-status', 'am-owner'].forEach((id) => $(id).addEventListener('input', drawAlerts));
+
+// ---- 3. AI Investigation ----
+const riskColor = (v) => (v >= 80 ? 'var(--bad)' : v >= 60 ? 'var(--warn)' : 'var(--accent)');
+
+function drawAI() {
+  const byId = Object.fromEntries(DATA.incidents.map((i) => [i.id, i]));
+  const inv = [...DATA.ai_investigations].sort((a, b) => b.risk - a.risk);
+  $('ai-count').textContent = fmtInt(inv.length);
+  $('ai-logs').textContent = fmtInt(inv.reduce((s, r) => s + r.correlated.length, 0));
+  $('ai-top').textContent = inv[0].risk + ' (' + inv[0].id + ')';
+
+  const rk = $('ai-risk');
+  rk.replaceChildren();
+  inv.forEach((r) => {
+    const row = el('div', 'risk-row', null, rk);
+    el('span', 'soc-mono', r.id, row);
+    el('span', 'risk-name', (byId[r.id] || {}).title || '', row);
+    const fill = el('span', null, null, el('span', 'risk-bar', null, row));
+    fill.style.width = r.risk + '%';
+    fill.style.background = riskColor(r.risk);
+    el('span', 'risk-val', String(r.risk), row).style.color = riskColor(r.risk);
+  });
+
+  const list = $('ai-list');
+  list.replaceChildren();
+  inv.forEach((r) => {
+    const inc = byId[r.id] || {};
+    const card = el('article', 'soc-card ai-card', null, list);
+    const top = el('div', 'ai-top', null, card);
+    el('span', 'soc-mono', r.id, top);
+    if (inc.severity) el('span', 'soc-chip chip-' + inc.severity.toLowerCase(), inc.severity, top);
+    el('span', 'risk-pill', 'Risiko ' + r.risk, top).style.color = riskColor(r.risk);
+    el('span', 'ai-conf', 'Keyakinan ' + fmtPct(r.confidence), top);
+    el('span', null, null, el('div', 'ai-meter', null, card)).style.width = fmtPct(r.confidence);
+    el('h2', null, inc.title || r.id, card);
+    el('p', 'ai-verdict', r.verdict, card);
+    el('h3', null, 'Ringkasan insiden', card);
+    el('p', null, r.summary, card);
+    el('h3', null, 'Korelasi log', card);
+    const corr = el('ol', 'corr', null, card);
+    r.correlated.forEach((e) => {
+      const li = el('li', null, null, corr);
+      el('span', 'soc-mono', e.t, li);
+      el('span', 'corr-src', e.src, li);
+      el('span', null, e.ev, li);
+    });
+    el('h3', null, 'Temuan', card);
+    const ul = el('ul', null, null, card);
+    r.findings.forEach((f) => el('li', null, f, ul));
+    el('h3', null, 'Rekomendasi', card);
+    const ol = el('ol', null, null, card);
+    r.actions.forEach((a) => el('li', null, a, ol));
+  });
+}
+
+// ---- 4. Threat Intelligence ----
+const REPUTATION = [...DATA.iocs, ...DATA.reputation_extra];
+
+function iocType(s) {
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(s)) return 'IP';
+  if (/^[a-f0-9]{64}$/i.test(s)) return 'SHA-256';
+  if (/^[a-f0-9]{40}$/i.test(s)) return 'SHA-1';
+  if (/^[a-f0-9]{32}$/i.test(s)) return 'MD5';
+  if (/^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(s)) return 'Domain';
+  return null;
+}
+
+function lookup(raw) {
+  const q = raw.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  const box = $('ti-result');
+  box.replaceChildren();
+  box.hidden = !q;
+  if (!q) return;
+
+  const hit = REPUTATION.find((r) => r.indicator.toLowerCase() === q.toLowerCase());
+  const head = el('div', 'ti-head', null, box);
+  if (!hit) {
+    const type = iocType(q);
+    el('span', 'soc-chip tone-muted', 'Tidak dikenal', head);
+    el('div', 'soc-mono ti-ind', q, box);
+    el('p', 'soc-card-note', type
+      ? 'Tipe terdeteksi: ' + type + '. Indikator ini tidak ada di feed yang tersinkron, jadi belum ada data reputasinya.'
+      : 'Format tidak dikenali. Masukkan alamat IPv4, nama domain, atau hash MD5, SHA-1, atau SHA-256.', box);
+    return;
+  }
+  el('span', 'soc-chip tone-' + tone(hit.verdict), hit.verdict, head);
+  el('span', 'ai-conf', 'Skor reputasi ' + hit.score + '/100', head);
+  el('div', 'soc-mono ti-ind', hit.indicator, box);
+  const dl = el('dl', 'ti-dl', null, box);
+  [
+    ['Tipe', hit.type],
+    ['Ancaman', hit.threat],
+    ['Sumber feed', hit.feed],
+    ['Negara', hit.country],
+    ['ASN / pemilik', hit.asn],
+    ['Pertama dilaporkan', hit.first_seen],
+    ['Tag', hit.tags.join(', ')],
+    ['Kecocokan di log', fmtInt(hit.hits) + ' kali'],
+    ['Terakhir terlihat', fmtTime(hit.last_seen)],
+    ['Insiden terkait', hit.incident || '—'],
+  ].forEach(([k, v]) => {
+    el('dt', null, k, dl);
+    el('dd', null, v, dl);
+  });
+}
+
+function drawIntel() {
+  const feeds = DATA.ti_feeds;
+  const iocs = [...DATA.iocs].sort((a, b) => b.hits - a.hits);
+  $('ti-hits').textContent = fmtInt(iocs.reduce((s, r) => s + r.hits, 0));
+  $('ti-count').textContent = fmtInt(feeds.reduce((s, r) => s + r.indicators, 0));
+  $('ti-feeds').textContent = fmtInt(feeds.length);
+
+  const tf = $('tb-feeds');
+  tf.replaceChildren();
+  feeds.forEach((r) => {
+    const tr = el('tr', null, null, tf);
+    td(tr, r.feed);
+    td(tr, fmtInt(r.indicators), 'soc-num');
+    td(tr, ago(r.synced_min), 'soc-num');
+    statusChip(tr, r.synced_min > 120 ? 'Delayed' : 'Healthy');
+  });
+
+  const ti = $('tb-iocs');
+  ti.replaceChildren();
+  iocs.forEach((r) => {
+    const tr = el('tr', 'click', null, ti);
+    td(tr, shortIoc(r.indicator), 'soc-mono').title = r.indicator;
+    td(tr, r.type);
+    statusChip(tr, r.verdict + ' · ' + r.score);
+    td(tr, r.threat, 'soc-opt');
+    td(tr, r.country, 'soc-opt');
+    td(tr, fmtInt(r.hits), 'soc-num');
+    td(tr, fmtTime(r.last_seen), 'soc-num soc-opt');
+    td(tr, r.incident || '—', 'soc-mono');
+    tr.addEventListener('click', () => {
+      $('ti-q').value = r.indicator;
+      lookup(r.indicator);
+      $('ti-form').scrollIntoView({behavior: 'smooth', block: 'center'});
+    });
+  });
+
+  const ex = $('ti-examples');
+  ['185.220.101.47', 'login-microsoftonline-secure.com', DATA.iocs[5].indicator, '8.8.8.8'].forEach((v) => {
+    const b = el('button', null, shortIoc(v), ex);
+    b.type = 'button';
+    b.title = v;
+    b.addEventListener('click', () => { $('ti-q').value = v; lookup(v); });
+  });
+}
+$('ti-form').addEventListener('submit', (ev) => { ev.preventDefault(); lookup($('ti-q').value); });
+
+// ---- 5. Incident Management ----
+let selCase = DATA.cases[0].id;
+
+function drawCases() {
+  const active = DATA.cases.filter((c) => c.status !== 'Closed');
+  const breach = active.filter((c) => c.sla_left_min < 0).length;
+  $('im-open').textContent = fmtInt(openInc.length);
+  $('im-cases').textContent = fmtInt(active.length);
+  $('im-breach').textContent = fmtInt(breach);
+  $('im-t-open').textContent = fmtInt(openInc.length);
+  $('im-t-crit').textContent = fmtInt(critOpen);
+  $('im-t-cases').textContent = fmtInt(active.length);
+  $('im-t-breach').textContent = fmtInt(breach);
+  $('im-t-breach').classList.toggle('soc-bad', breach > 0);
+  $('im-t-mttr').textContent = DATA.kpis.mttr_hours.value.toFixed(1);
+  $('badge-incidents').textContent = fmtInt(critOpen);
+  $('badge-incidents').hidden = critOpen === 0;
+
+  const tb = $('tb-cases');
+  tb.replaceChildren();
+  DATA.cases.forEach((c) => {
+    const tr = el('tr', 'click' + (c.id === selCase ? ' sel' : ''), null, tb);
+    td(tr, c.id, 'soc-mono');
+    td(tr, c.title);
+    sevChip(tr, c.severity);
+    td(tr, c.owner, 'soc-opt');
+    td(tr, c.incidents.join(', '), 'soc-opt soc-mono');
+    statusChip(tr, c.status);
+    const left = c.sla_left_min;
+    td(tr, (left < 0 ? 'Lewat ' : 'Sisa ') + dur(Math.abs(left)), 'soc-num' + (left < 0 ? ' soc-bad' : left < 120 ? ' soc-warn' : ''));
+    tr.addEventListener('click', () => { selCase = c.id; drawCases(); drawTimeline(); });
+  });
+}
+
+function drawTimeline() {
+  const c = DATA.cases.find((x) => x.id === selCase);
+  $('tl-title').textContent = 'Timeline investigasi · ' + c.id;
+  $('tl-note').textContent = c.title + '. Pemilik: ' + c.owner + '. Waktu dalam UTC.';
+  const ol = $('tl-list');
+  ol.replaceChildren();
+  [...c.timeline].sort((a, b) => a.t.localeCompare(b.t)).forEach((e) => {
+    const li = el('li', null, null, ol);
+    el('span', 'tl-meta', fmtTime(e.t) + ' · ' + e.who, li);
+    el('span', null, e.what, li);
   });
 }
 
@@ -851,16 +1822,15 @@ function drawIncidents() {
   });
   tb.replaceChildren();
   rows.forEach((r) => {
-    const tr = document.createElement('tr');
+    const tr = el('tr', null, null, tb);
     td(tr, r.id, 'soc-mono');
     td(tr, fmtOpened(new Date(r.opened)), 'soc-num');
-    chip(tr, r.severity, 'chip-' + r.severity.toLowerCase());
+    sevChip(tr, r.severity);
     td(tr, r.title);
     td(tr, r.tactic, 'soc-opt');
     td(tr, r.asset, 'soc-opt soc-mono');
     td(tr, r.status);
     td(tr, r.queue, 'soc-opt');
-    tb.appendChild(tr);
   });
   $('soc-nomatch').hidden = !(q && rows.length === 0);
 }
@@ -876,113 +1846,225 @@ document.querySelectorAll('[data-sort]').forEach((b) => b.addEventListener('clic
 }));
 $('soc-search').addEventListener('input', drawIncidents);
 
-// ---- Alert Monitoring ----
-$('al-open').textContent = fmtInt(openInc.length);
-$('al-crit').textContent = fmtInt(critOpen);
-$('al-unassigned').textContent = fmtInt(unassigned);
-$('badge-alerts').textContent = fmtInt(critOpen);
-$('badge-alerts').hidden = critOpen === 0;
+// ---- 6. Automation Center ----
+function autoStats() {
+  const s = DATA.automation_stats;
+  const pending = DATA.approvals.filter((a) => !a.decision).length;
+  $('au-runs').textContent = fmtInt(s.runs_24h);
+  $('au-rate').textContent = fmtPct(s.success);
+  $('au-pending').textContent = fmtInt(pending);
+  $('au-t-runs').textContent = fmtInt(s.runs_24h);
+  $('au-t-rate').textContent = fmtPct(s.success);
+  $('au-t-saved').textContent = fmtInt(s.saved_hours);
+  $('au-t-pending').textContent = fmtInt(pending);
+  $('badge-automation').textContent = fmtInt(pending);
+  $('badge-automation').hidden = pending === 0;
+}
 
-// ---- Threat Intelligence ----
-function drawIntel() {
-  const feeds = DATA.ti_feeds;
-  const iocs = [...DATA.iocs].sort((a, b) => b.hits - a.hits);
-  $('ti-hits').textContent = fmtInt(iocs.reduce((s, r) => s + r.hits, 0));
-  $('ti-count').textContent = fmtInt(feeds.reduce((s, r) => s + r.indicators, 0));
-  $('ti-feeds').textContent = fmtInt(feeds.length);
+function decide(a, ok) {
+  a.decision = ok ? 'Disetujui' : 'Ditolak';
+  const run = DATA.runs.find((r) => r.playbook === a.playbook && r.target === a.target && r.status === 'Waiting approval');
+  if (run) run.status = ok ? 'Running' : 'Ditolak';
+  audit((ok ? 'Menyetujui' : 'Menolak') + ' aksi ' + a.id + ': ' + a.action, a.ref);
+  autoStats();
+  drawApprovals();
+  drawRuns();
+}
 
-  const tf = $('tb-feeds');
-  tf.replaceChildren();
-  feeds.forEach((r) => {
-    const tr = document.createElement('tr');
-    td(tr, r.feed);
-    td(tr, fmtInt(r.indicators), 'soc-num');
-    td(tr, ago(r.synced_min), 'soc-num');
-    const st = r.synced_min > 120 ? 'Delayed' : 'Healthy';
-    chip(tr, st, 'st-' + st.toLowerCase());
-    tf.appendChild(tr);
-  });
-
-  const ti = $('tb-iocs');
-  ti.replaceChildren();
-  iocs.forEach((r) => {
-    const tr = document.createElement('tr');
-    td(tr, r.indicator, 'soc-mono');
-    td(tr, r.type);
-    td(tr, r.threat, 'soc-opt');
-    td(tr, r.feed, 'soc-opt');
-    td(tr, fmtInt(r.hits), 'soc-num');
-    td(tr, fmtOpened(new Date(r.last_seen)), 'soc-num soc-opt');
-    td(tr, r.incident || '—', 'soc-mono');
-    ti.appendChild(tr);
+function drawApprovals() {
+  const box = $('au-approvals');
+  box.replaceChildren();
+  DATA.approvals.forEach((a) => {
+    const row = el('div', 'approval', null, box);
+    const main = el('div', 'approval-main', null, row);
+    el('strong', null, a.action, main);
+    el('span', 'approval-meta', a.id + ' · ' + a.playbook + ' · ' + a.ref + ' · diminta ' + fmtTime(a.requested), main);
+    const act = el('div', 'approval-act', null, row);
+    if (a.decision) {
+      el('span', 'soc-chip tone-' + tone(a.decision), a.decision + ' oleh Anda', act);
+      return;
+    }
+    const yes = el('button', 'soc-btn primary', 'Setujui', act);
+    const no = el('button', 'soc-btn danger', 'Tolak', act);
+    yes.type = 'button';
+    no.type = 'button';
+    yes.addEventListener('click', () => decide(a, true));
+    no.addEventListener('click', () => decide(a, false));
   });
 }
 
-// ---- AI Investigation ----
-function drawAI() {
-  const list = $('ai-list');
-  const byId = Object.fromEntries(DATA.incidents.map((i) => [i.id, i]));
-  const el = (tag, cls, text, parent) => {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text != null) e.textContent = text;
-    if (parent) parent.appendChild(e);
-    return e;
-  };
-  $('ai-count').textContent = fmtInt(DATA.ai_investigations.length);
-  list.replaceChildren();
-  DATA.ai_investigations.forEach((r) => {
-    const inc = byId[r.id] || {};
-    const card = el('article', 'soc-card ai-card', null, list);
-    const top = el('div', 'ai-top', null, card);
-    el('span', 'soc-mono', r.id, top);
-    if (inc.severity) el('span', 'soc-chip chip-' + inc.severity.toLowerCase(), inc.severity, top);
-    el('span', 'ai-conf', 'Keyakinan ' + fmtPct(r.confidence), top);
-    const meter = el('div', 'ai-meter', null, card);
-    el('span', null, null, meter).style.width = fmtPct(r.confidence);
-    el('h2', null, inc.title || r.id, card);
-    el('p', 'ai-verdict', r.verdict, card);
-    el('p', null, r.summary, card);
-    el('h3', null, 'Temuan', card);
-    const ul = el('ul', null, null, card);
-    r.findings.forEach((f) => el('li', null, f, ul));
-    el('h3', null, 'Rekomendasi', card);
-    const ol = el('ol', null, null, card);
-    r.actions.forEach((a) => el('li', null, a, ol));
-  });
-}
-
-// ---- SIEM Health ----
-const totalEps = logs.reduce((s, r) => s + r.eps, 0);
-$('sh-healthy').textContent = fmtInt(healthy);
-$('sh-total').textContent = fmtInt(logs.length);
-$('sh-eps').textContent = fmtInt(totalEps);
-$('sh-eps-tile').textContent = fmtInt(totalEps);
-$('sh-ok').textContent = fmtInt(healthy);
-$('sh-delayed').textContent = fmtInt(delayed);
-$('sh-down').textContent = fmtInt(down);
-$('badge-siem').textContent = fmtInt(delayed + down);
-$('badge-siem').hidden = delayed + down === 0;
-
-function drawComponents() {
-  const tb = $('tb-components');
+function drawPlaybooks() {
+  const tb = $('tb-playbooks');
   tb.replaceChildren();
-  DATA.siem_components.forEach((r) => {
-    const tr = document.createElement('tr');
-    td(tr, r.name);
-    td(tr, r.detail);
-    chip(tr, r.status, 'st-' + r.status.toLowerCase());
-    tb.appendChild(tr);
+  DATA.playbooks.forEach((p) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, p.name);
+    td(tr, p.trigger, 'soc-opt');
+    td(tr, fmtInt(p.runs), 'soc-num');
+    td(tr, p.runs ? fmtPct(p.success) : '—', 'soc-num');
+    td(tr, p.approval ? 'Wajib' : 'Tidak perlu', p.approval ? 'soc-warn' : 'tone-muted');
+    toggle(tr, p.enabled, 'Aktifkan ' + p.name, (on) => {
+      p.enabled = on;
+      audit((on ? 'Mengaktifkan' : 'Menonaktifkan') + ' playbook', p.name);
+    });
   });
 }
 
-// ---- Panel navigation (#overview, #alerts, #intel, #ai, #siem) ----
-const VIEWS = ['overview', 'alerts', 'intel', 'ai', 'siem'];
+function drawRuns() {
+  const tb = $('tb-runs');
+  tb.replaceChildren();
+  [...DATA.runs].sort((a, b) => b.time.localeCompare(a.time)).forEach((r) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, fmtTime(r.time), 'soc-num');
+    td(tr, r.playbook);
+    td(tr, r.target, 'soc-opt soc-mono');
+    td(tr, r.duration, 'soc-num soc-opt');
+    statusChip(tr, r.status);
+  });
+}
 
-// Charts measure their box, so only draw the ones on the visible panel.
+// ---- 7. SIEM Health ----
+function drawLogs() {
+  const tb = $('tb-logs');
+  const order = {Down: 0, Delayed: 1, Healthy: 2};
+  tb.replaceChildren();
+  [...logs].sort((a, b) => (order[a.status] - order[b.status]) || (b.eps - a.eps)).forEach((r) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, r.source);
+    td(tr, r.type, 'soc-opt');
+    td(tr, fmtInt(r.eps), 'soc-num');
+    td(tr, ago(r.last_seen_min), 'soc-num');
+    statusChip(tr, r.status);
+  });
+}
+
+function drawSiem() {
+  const nodes = DATA.nodes;
+  const agents = DATA.agents;
+  const errors = DATA.pipeline_errors.reduce((s, r) => s + r.count, 0);
+  const cluster = nodes.some((n) => n.status === 'Down') ? 'Red' : nodes.some((n) => n.status === 'Warning') ? 'Yellow' : 'Green';
+  const agentsOk = agents.filter((a) => a.status === 'Healthy').length;
+  const totalEps = logs.reduce((s, r) => s + r.eps, 0);
+
+  $('sh-cluster').textContent = cluster;
+  $('sh-cluster-tile').textContent = cluster;
+  $('sh-cluster-tile').className = 'soc-tile-value tone-' + tone(cluster);
+  $('sh-nodes').textContent = fmtInt(nodes.length);
+  $('sh-healthy').textContent = fmtInt(healthy);
+  $('sh-total').textContent = fmtInt(logs.length);
+  $('sh-eps').textContent = fmtInt(totalEps);
+  $('sh-eps-tile').textContent = fmtInt(totalEps);
+  $('sh-agents').textContent = fmtInt(agentsOk);
+  $('sh-agents-total').textContent = fmtInt(agents.length);
+  $('sh-bad').textContent = fmtInt(delayed + down);
+  $('sh-delayed').textContent = fmtInt(delayed);
+  $('sh-down').textContent = fmtInt(down);
+  $('sh-errors').textContent = fmtInt(errors);
+  $('sh-err-tile').textContent = fmtInt(errors);
+  const problems = delayed + down + agents.length - agentsOk;
+  $('badge-siem').textContent = fmtInt(problems);
+  $('badge-siem').hidden = problems === 0;
+
+  const pct = (tr, v) => td(tr, fmtPct(v), 'soc-num' + (v >= 0.8 ? ' soc-warn' : ''));
+  const tn = $('tb-nodes');
+  tn.replaceChildren();
+  nodes.forEach((n) => {
+    const tr = el('tr', null, null, tn);
+    td(tr, n.node, 'soc-mono');
+    td(tr, n.role, 'soc-opt');
+    pct(tr, n.cpu);
+    pct(tr, n.heap);
+    pct(tr, n.disk);
+    statusChip(tr, n.status);
+  });
+
+  const order = {Down: 0, Delayed: 1, Healthy: 2};
+  const ta = $('tb-agents');
+  ta.replaceChildren();
+  [...agents].sort((a, b) => order[a.status] - order[b.status]).forEach((a) => {
+    const tr = el('tr', null, null, ta);
+    td(tr, a.host, 'soc-mono');
+    td(tr, a.os, 'soc-opt');
+    td(tr, a.version, 'soc-opt');
+    td(tr, ago(a.last_min), 'soc-num');
+    statusChip(tr, a.status);
+  });
+
+  const tp = $('tb-pipe');
+  tp.replaceChildren();
+  DATA.pipeline_errors.forEach((r) => {
+    const tr = el('tr', null, null, tp);
+    td(tr, fmtTime(r.time), 'soc-num');
+    td(tr, r.pipeline, 'soc-mono');
+    td(tr, r.error);
+    td(tr, fmtInt(r.count), 'soc-num');
+  });
+
+  drawLogs();
+}
+
+// ---- 8. Administration ----
+function drawAdmin() {
+  const users = DATA.users;
+  const rbac = DATA.rbac;
+  const ints = DATA.integrations;
+  $('ad-users').textContent = fmtInt(users.filter((u) => u.active).length);
+  $('ad-roles').textContent = fmtInt(rbac.roles.length);
+  $('ad-nomfa').textContent = fmtInt(users.filter((u) => u.active && !u.mfa).length);
+  $('ad-interr').textContent = fmtInt(ints.filter((i) => i.enabled && i.status.startsWith('Error')).length);
+
+  const tu = $('tb-users');
+  tu.replaceChildren();
+  users.forEach((u) => {
+    const tr = el('tr', null, null, tu);
+    td(tr, u.name);
+    td(tr, u.email, 'soc-opt soc-mono');
+    td(tr, u.role);
+    statusChip(tr, u.mfa ? 'Aktif' : 'Belum aktif');
+    td(tr, fmtTime(u.last_login), 'soc-num soc-opt');
+    statusChip(tr, u.active ? 'Aktif' : 'Nonaktif');
+  });
+
+  const head = $('th-rbac');
+  head.replaceChildren();
+  const hr = el('tr', null, null, head);
+  el('th', null, 'Izin', hr);
+  rbac.roles.forEach((r) => el('th', 'c', r.role, hr));
+  const tr = $('tb-rbac');
+  tr.replaceChildren();
+  rbac.permissions.forEach((p, i) => {
+    const row = el('tr', null, null, tr);
+    td(row, p);
+    rbac.roles.forEach((r) => {
+      const ok = r.grants[i] === '1';
+      const c = td(row, ok ? '✓' : '—', 'c ' + (ok ? 'tone-ok' : 'tone-muted'));
+      c.setAttribute('aria-label', ok ? 'Diizinkan' : 'Tidak diizinkan');
+    });
+  });
+
+  const ti = $('tb-integrations');
+  ti.replaceChildren();
+  ints.forEach((it) => {
+    const row = el('tr', null, null, ti);
+    td(row, it.name);
+    td(row, it.type, 'soc-opt');
+    statusChip(row, it.enabled ? it.status : 'Nonaktif');
+    td(row, it.enabled ? ago(it.synced_min) : '—', 'soc-num');
+    toggle(row, it.enabled, 'Aktifkan integrasi ' + it.name, (on) => {
+      it.enabled = on;
+      if (on && it.status === 'Nonaktif') { it.status = 'Terhubung'; it.synced_min = 0; }
+      audit((on ? 'Mengaktifkan' : 'Menonaktifkan') + ' integrasi', it.name);
+      drawAdmin();
+    });
+  });
+}
+
+// ---- Module navigation (#overview, #alerts, #ai, #intel, #incidents, #automation, #siem, #admin) ----
+const VIEWS = ['overview', 'alerts', 'ai', 'intel', 'incidents', 'automation', 'siem', 'admin'];
+
+// Charts measure their box, so only draw the ones on the visible module.
 function drawCharts() {
-  if (!$('view-overview').hidden) drawVolume();
-  if (!$('view-intel').hidden) drawTactics();
+  if (!$('view-overview').hidden) { drawVolume(); drawTactics(); }
 }
 let resizeTimer;
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawCharts, 120); });
@@ -1006,11 +2088,21 @@ document.querySelectorAll('.side-link').forEach((a) => a.addEventListener('click
   showView(a.dataset.view);
 }));
 
-drawLogs();
-drawIncidents();
-drawIntel();
+drawOverview();
+alertStats();
+drawAlerts();
 drawAI();
-drawComponents();
+drawIntel();
+drawCases();
+drawTimeline();
+drawIncidents();
+autoStats();
+drawApprovals();
+drawPlaybooks();
+drawRuns();
+drawSiem();
+drawAdmin();
+drawAudit();
 showView();
 
 // ---- Background: live threat map (dotted world map + animated attack arcs) ----
