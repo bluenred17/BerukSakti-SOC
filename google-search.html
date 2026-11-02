@@ -7,228 +7,262 @@
 <style>
   :root {
     color-scheme: dark;
-    --bg: #202124;
-    --text: #e8eaed;
-    --muted: #9aa0a6;
-    --border: #5f6368;
-    --hover-shadow: 0 1px 6px rgba(0,0,0,.6);
-    --btn-bg: #303134;
-    --footer-bg: #171717;
-    --link: #8ab4f8;
+    --bg: #191a1a;
+    --sidebar: #202222;
+    --panel: #202222;
+    --panel-2: #2a2c2c;
+    --text: #e8e8e6;
+    --muted: #8d9191;
+    --border: #353838;
+    --accent: #20b8cd;
+    --accent-dark: #1a9aab;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: Arial, "Segoe UI", Roboto, sans-serif;
+    font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     display: flex;
-    flex-direction: column;
   }
   a { color: inherit; text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  button { font: inherit; color: inherit; }
 
-  header {
+  /* Sidebar */
+  aside {
+    width: 72px;
+    flex: none;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
-    padding: 6px 16px;
-    font-size: 13px;
+    padding: 14px 0;
+    gap: 6px;
   }
-  header nav { display: flex; gap: 15px; align-items: center; }
-  .apps {
+  .brand {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: grid; place-items: center;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  .new-btn {
     width: 40px; height: 40px; border-radius: 50%;
-    display: grid; place-items: center; cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--border);
+    display: grid; place-items: center; cursor: pointer; margin-bottom: 12px;
   }
-  .apps:hover { background: rgba(128,128,128,.15); }
-  .signin {
-    background: #1a73e8; color: #fff; padding: 9px 23px;
-    border-radius: 4px; font-weight: 500; font-size: 14px;
+  .new-btn:hover { border-color: var(--muted); }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--muted); padding: 8px 4px; width: 60px;
+    border-radius: 8px; cursor: pointer;
   }
-  .signin:hover { text-decoration: none; background: #1b66c9; }
+  .nav-item:hover, .nav-item.current { color: var(--text); background: rgba(255,255,255,.05); }
+  .spacer { flex: 1; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #3b4b4d; color: var(--text);
+    display: grid; place-items: center; font-size: 13px; font-weight: 600;
+  }
 
+  /* Main */
   main {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 0 16px;
-    margin-top: 12vh;
-  }
-  .logo {
-    font-family: "Product Sans", "Google Sans", Arial, sans-serif;
-    font-size: clamp(44px, 13vw, 92px);
-    font-weight: 500;
-    letter-spacing: -3px;
-    margin-bottom: 26px;
-    user-select: none;
-  }
-  .logo span:nth-child(4n+1) { color: #4285f4; }
-  .logo span:nth-child(4n+2) { color: #ea4335; }
-  .logo span:nth-child(4n+3) { color: #fbbc05; }
-  .logo span:nth-child(4n+4) { color: #34a853; }
-
-  form { width: 100%; max-width: 584px; }
-  .search-box {
-    position: relative;
-    display: flex;
-    align-items: center;
-    height: 46px;
-    border: 1px solid var(--border);
-    border-radius: 24px;
-    padding: 0 14px;
-    background: var(--bg);
-  }
-  .search-box:hover, .search-box:focus-within {
-    box-shadow: var(--hover-shadow);
-    border-color: transparent;
-  }
-  .search-box.open {
-    border-radius: 24px 24px 0 0;
-    box-shadow: var(--hover-shadow);
-    border-color: transparent;
-  }
-  .search-box input {
-    flex: 1;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--text);
-    font-size: 16px;
-    padding: 0 12px;
     min-width: 0;
   }
+  .center {
+    width: 100%; max-width: 680px;
+    margin-top: 22vh;
+  }
+  .logo {
+    text-align: center;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(32px, 7vw, 46px);
+    font-weight: 400;
+    letter-spacing: -.5px;
+    margin: 0 0 28px;
+    user-select: none;
+  }
+  .logo b { color: var(--accent); font-weight: 400; }
+
+  /* Ask box */
+  form { position: relative; }
+  .ask {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 14px 10px;
+    transition: border-color .15s;
+  }
+  .ask:focus-within { border-color: #4a4e4e; }
+  .ask textarea {
+    width: 100%;
+    border: 0; outline: 0; resize: none;
+    background: transparent; color: var(--text);
+    font: inherit; font-size: 16px; line-height: 1.5;
+    min-height: 48px; max-height: 200px;
+    padding: 2px 4px;
+  }
+  .ask textarea::placeholder { color: var(--muted); }
+  .toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 6px; gap: 8px;
+  }
+  .modes {
+    display: flex; background: var(--bg); border-radius: 10px; padding: 3px;
+    border: 1px solid var(--border);
+  }
+  .modes button {
+    background: none; border: 0; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 7px; font-size: 13px; color: var(--muted);
+  }
+  .modes button.on { background: var(--panel-2); color: var(--accent); }
+  .tools { display: flex; align-items: center; gap: 4px; }
   .icon-btn {
-    background: none; border: 0; cursor: pointer; padding: 4px;
+    background: none; border: 0; cursor: pointer;
+    width: 34px; height: 34px; border-radius: 8px;
     display: grid; place-items: center; color: var(--muted);
   }
-  .clear { display: none; border-right: 1px solid var(--border); padding-right: 10px; margin-right: 6px; }
-  .has-text .clear { display: grid; }
+  .icon-btn:hover { color: var(--text); background: rgba(255,255,255,.06); }
+  .send {
+    width: 34px; height: 34px; border-radius: 8px; border: 0; cursor: pointer;
+    background: var(--panel-2); color: var(--muted);
+    display: grid; place-items: center; margin-left: 4px;
+  }
+  .has-text .send { background: var(--accent); color: #0d1414; }
+  .has-text .send:hover { background: var(--accent-dark); }
 
+  /* Suggestions dropdown */
   .suggestions {
     display: none;
-    position: absolute;
-    top: 100%; left: 0; right: 0;
-    background: var(--bg);
-    border-radius: 0 0 24px 24px;
-    box-shadow: 0 4px 6px rgba(0,0,0,.6);
-    padding: 4px 0 16px;
-    list-style: none;
-    margin: 0;
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    list-style: none; margin: 0; padding: 6px;
     z-index: 10;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
   }
-  .search-box.open .suggestions { display: block; }
-  .suggestions::before {
-    content: ""; display: block; height: 1px; background: var(--border);
-    margin: 0 14px 4px;
-  }
+  form.open .suggestions { display: block; }
   .suggestions li {
-    display: flex; align-items: center; gap: 14px;
-    padding: 6px 20px; cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 15px;
   }
-  .suggestions li:hover, .suggestions li.active { background: rgba(128,128,128,.12); }
+  .suggestions li:hover, .suggestions li.active { background: rgba(255,255,255,.06); }
   .suggestions li svg { flex: none; color: var(--muted); }
 
-  .buttons {
-    display: flex; justify-content: center; gap: 12px;
-    margin-top: 28px; flex-wrap: wrap;
+  /* Quick chips */
+  .chips {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    margin-top: 18px;
   }
-  .buttons button {
-    background: var(--btn-bg);
-    border: 1px solid var(--btn-bg);
-    border-radius: 4px;
-    color: var(--text);
-    font-size: 14px;
-    padding: 0 16px;
-    height: 36px;
-    cursor: pointer;
+  .chip {
+    background: none; border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 14px; font-size: 13px; color: var(--muted); cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
   }
-  .buttons button:hover { border-color: var(--border); box-shadow: 0 1px 1px rgba(0,0,0,.1); }
+  .chip:hover { color: var(--text); border-color: #4a4e4e; }
 
-  .lang { margin-top: 28px; font-size: 13px; color: var(--muted); text-align: center; }
-  .lang a { color: var(--link); margin: 0 4px; }
-
-  footer { background: var(--footer-bg); font-size: 14px; color: var(--muted); }
-  footer .row { padding: 14px 30px; }
-  footer .row + .row {
-    border-top: 1px solid var(--border);
-    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px;
+  footer {
+    margin-top: auto; padding: 18px 0;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 18px;
+    font-size: 13px; color: var(--muted);
   }
-  footer .links { display: flex; gap: 26px; flex-wrap: wrap; }
+  footer a:hover { color: var(--text); }
 
   @media (max-width: 600px) {
-    main { margin-top: 8vh; }
-    footer .row { padding: 12px 16px; }
-    footer .links { gap: 16px; }
+    body { flex-direction: column-reverse; }
+    aside {
+      width: 100%; flex-direction: row; justify-content: space-around;
+      border-right: 0; border-top: 1px solid var(--border); padding: 6px 8px;
+    }
+    .brand, .spacer, .new-btn { display: none; }
+    .center { margin-top: 12vh; }
+    .modes button span { display: none; }
   }
 </style>
 </head>
 <body>
-<header>
-  <nav>
-    <a href="https://about.google/">Tentang</a>
-    <a href="https://store.google.com/">Toko</a>
-  </nav>
-  <nav>
-    <a href="https://mail.google.com/">Gmail</a>
-    <a href="https://www.google.com/imghp">Gambar</a>
-    <span class="apps" title="Aplikasi Google">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>
-    </span>
-    <a class="signin" href="https://accounts.google.com/">Login</a>
-  </nav>
-</header>
+<aside>
+  <div class="brand" aria-label="BerukSakti">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2v20M4 6l8 5 8-5M4 6v12l8-5 8 5V6M4 18l8-5"/></svg>
+  </div>
+  <button class="new-btn" id="newThread" title="Utas baru">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+  <a class="nav-item current" href="#">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    Beranda
+  </a>
+  <a class="nav-item" href="https://news.google.com/?hl=id">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg>
+    Jelajah
+  </a>
+  <a class="nav-item" href="#" id="libraryLink">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 6l3.5-1 2 13.5-3.5 1z"/></svg>
+    Pustaka
+  </a>
+  <div class="spacer"></div>
+  <div class="avatar" title="Akun">BS</div>
+</aside>
 
 <main>
-  <div class="logo" aria-label="BerukSakti"><span>B</span><span>e</span><span>r</span><span>u</span><span>k</span><span>S</span><span>a</span><span>k</span><span>t</span><span>i</span></div>
+  <div class="center">
+    <h1 class="logo">beruk<b>sakti</b></h1>
 
-  <form id="searchForm" action="https://www.google.com/search" method="get" autocomplete="off">
-    <div class="search-box" id="box">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="color:var(--muted)"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-      <input id="q" name="q" type="text" aria-label="Telusuri" title="Telusuri" autofocus>
-      <button type="button" class="icon-btn clear" id="clear" aria-label="Hapus">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-      </button>
-      <button type="button" class="icon-btn" id="mic" aria-label="Penelusuran suara">
-        <svg width="22" height="22" viewBox="0 0 24 24"><path fill="#4285f4" d="M12 15c1.66 0 3-1.31 3-2.97V5.97C15 4.31 13.66 3 12 3S9 4.31 9 5.97v6.06C9 13.69 10.34 15 12 15z"/><path fill="#34a853" d="M11 18.08h2V21h-2z"/><path fill="#fbbc05" d="M7.05 16.87c-1.27-1.33-2.05-3.13-2.05-5.12h2c0 1.46.57 2.78 1.48 3.76l-1.43 1.36z"/><path fill="#ea4335" d="M12 18.07c-1.94 0-3.71-.79-5-2.07l1.42-1.42c.92.93 2.19 1.49 3.58 1.49 2.76 0 5-2.24 5-5h2c0 3.86-3.14 7-7 7z"/></svg>
-      </button>
+    <form id="searchForm" autocomplete="off">
+      <div class="ask" id="box">
+        <textarea id="q" name="q" rows="2" placeholder="Tanya apa saja…" aria-label="Tanya apa saja" autofocus></textarea>
+        <div class="toolbar">
+          <div class="modes" role="tablist">
+            <button type="button" class="on" data-mode="search" title="Cari di web">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <span>Cari</span>
+            </button>
+            <button type="button" data-mode="ai" title="Tanya AI">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>
+              <span>Tanya AI</span>
+            </button>
+          </div>
+          <div class="tools">
+            <button type="button" class="icon-btn" id="mic" aria-label="Penelusuran suara" title="Suara">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </button>
+            <button type="submit" class="send" aria-label="Kirim" title="Kirim">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
       <ul class="suggestions" id="suggestions" role="listbox"></ul>
-    </div>
+    </form>
 
-    <div class="buttons">
-      <button type="submit">Penelusuran BerukSakti</button>
-      <button type="button" id="lucky">Saya Lagi Beruntung</button>
-      <button type="button" id="ai">✨ Chat with AI</button>
+    <div class="chips" id="chips">
+      <button type="button" class="chip">☁️ Cuaca hari ini</button>
+      <button type="button" class="chip">📈 Harga emas hari ini</button>
+      <button type="button" class="chip">💱 Kurs dollar ke rupiah</button>
+      <button type="button" class="chip">🍳 Resep nasi goreng</button>
     </div>
-  </form>
-
-  <div class="lang">
-    BerukSakti tersedia dalam: <a href="#">English</a><a href="#">Basa Jawa</a><a href="#">Basa Sunda</a>
   </div>
+
+  <footer>
+    <a href="#">Tentang</a>
+    <a href="#">Privasi</a>
+    <a href="#">Persyaratan</a>
+    <a href="#">Bahasa Indonesia</a>
+  </footer>
 </main>
-
-<footer>
-  <div class="row">Indonesia</div>
-  <div class="row">
-    <div class="links">
-      <a href="https://ads.google.com/">Periklanan</a>
-      <a href="https://smallbusiness.withgoogle.com/">Bisnis</a>
-      <a href="https://www.google.com/search/howsearchworks/">Cara kerja Penelusuran</a>
-    </div>
-    <div class="links">
-      <a href="https://policies.google.com/privacy">Privasi</a>
-      <a href="https://policies.google.com/terms">Persyaratan</a>
-      <a href="#">Setelan</a>
-    </div>
-  </div>
-</footer>
 
 <script>
   const form = document.getElementById('searchForm');
   const box = document.getElementById('box');
   const q = document.getElementById('q');
   const list = document.getElementById('suggestions');
-  const clearBtn = document.getElementById('clear');
+  const modeBtns = document.querySelectorAll('.modes button');
 
   const SAMPLE = [
     'cuaca hari ini', 'berita terkini', 'kurs dollar ke rupiah', 'resep nasi goreng',
@@ -239,19 +273,38 @@
   let history = [];
   try { history = JSON.parse(localStorage.getItem('searchHistory') || '[]'); } catch (e) {}
 
+  let mode = 'search';
+  try { mode = localStorage.getItem('askMode') || 'search'; } catch (e) {}
   let active = -1;
+
+  function setMode(m) {
+    mode = m;
+    modeBtns.forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+    q.placeholder = m === 'ai' ? 'Tanya AI apa saja…' : 'Tanya apa saja…';
+    try { localStorage.setItem('askMode', m); } catch (e) {}
+  }
+  modeBtns.forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); q.focus(); }));
+  setMode(mode);
 
   function go(term) {
     term = term.trim();
     if (!term) return;
     history = [term, ...history.filter(h => h !== term)].slice(0, 8);
     try { localStorage.setItem('searchHistory', JSON.stringify(history)); } catch (e) {}
-    window.location.href = 'https://www.google.com/search?q=' + encodeURIComponent(term);
+    // Mode "Tanya AI" membuka Claude, mode "Cari" membuka Google
+    window.location.href = mode === 'ai'
+      ? 'https://claude.ai/new?q=' + encodeURIComponent(term)
+      : 'https://www.google.com/search?q=' + encodeURIComponent(term);
+  }
+
+  function autosize() {
+    q.style.height = 'auto';
+    q.style.height = q.scrollHeight + 'px';
   }
 
   function render() {
     const v = q.value.trim().toLowerCase();
-    box.classList.toggle('has-text', q.value.length > 0);
+    box.classList.toggle('has-text', v.length > 0);
     const fromHistory = history.filter(h => h.toLowerCase().includes(v)).map(t => ({ t, h: true }));
     const fromSample = v ? SAMPLE.filter(s => s.includes(v) && !history.includes(s)).map(t => ({ t, h: false })) : [];
     const items = [...fromHistory, ...fromSample].slice(0, 8);
@@ -260,21 +313,26 @@
     items.forEach(({ t, h }) => {
       const li = document.createElement('li');
       li.innerHTML = h
-        ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7a6.97 6.97 0 0 1-4.95-2.05l-1.42 1.42A8.95 8.95 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>'
-        : '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>';
+        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
       const span = document.createElement('span');
       span.textContent = t;
       li.appendChild(span);
       li.addEventListener('mousedown', e => { e.preventDefault(); go(t); });
       list.appendChild(li);
     });
-    box.classList.toggle('open', items.length > 0 && document.activeElement === q);
+    form.classList.toggle('open', items.length > 0 && document.activeElement === q);
   }
 
-  q.addEventListener('input', render);
+  q.addEventListener('input', () => { autosize(); render(); });
   q.addEventListener('focus', render);
-  q.addEventListener('blur', () => box.classList.remove('open'));
+  q.addEventListener('blur', () => form.classList.remove('open'));
   q.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      go(q.value);
+      return;
+    }
     const items = [...list.children];
     if (!items.length) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -283,24 +341,23 @@
       items.forEach((li, i) => li.classList.toggle('active', i === active));
       q.value = items[active].textContent;
     } else if (e.key === 'Escape') {
-      box.classList.remove('open');
+      form.classList.remove('open');
     }
   });
 
-  clearBtn.addEventListener('click', () => { q.value = ''; q.focus(); render(); });
-
   form.addEventListener('submit', e => { e.preventDefault(); go(q.value); });
 
-  document.getElementById('lucky').addEventListener('click', () => {
-    const term = q.value.trim();
-    if (!term) { window.location.href = 'https://doodles.google/'; return; }
-    window.location.href = 'https://www.google.com/search?btnI=1&q=' + encodeURIComponent(term);
+  document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+    go(c.textContent.replace(/^\S+\s/, ''));
+  }));
+
+  document.getElementById('newThread').addEventListener('click', () => {
+    q.value = ''; autosize(); render(); q.focus();
   });
 
-  // Buka Claude dengan isi kotak pencarian sebagai pertanyaan pertama
-  document.getElementById('ai').addEventListener('click', () => {
-    const term = q.value.trim();
-    window.location.href = 'https://claude.ai/new' + (term ? '?q=' + encodeURIComponent(term) : '');
+  document.getElementById('libraryLink').addEventListener('click', e => {
+    e.preventDefault();
+    q.value = ''; q.focus(); render();
   });
 
   document.getElementById('mic').addEventListener('click', () => {
