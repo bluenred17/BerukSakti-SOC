@@ -1,39 +1,31 @@
 # PROGRESS — BerukSakti
 
-Rangkuman status proyek per 3 November 2026, sampai penerapan ide dari AiSOC (feed CISA KEV, Investigation Ledger, tampilan kosong yang jujur) di atas data publik UNSW-NB15 dan EuRepoC.
+Rangkuman status proyek per 3 November 2026: dashboard SOC yang berjalan di VPS sendiri, membaca data asli dari Wazuh, dengan login, RBAC, dan manajemen pengguna.
 
 - Repo: https://github.com/bluenred17/BerukSakti-SOC (branch `master`)
-- Website: https://beruksakti-soc.vercel.app
+- Dashboard live (butuh login): https://wazuh.toyspedia.fun/soc-automation/
+- Halaman pencarian + demo statis: https://beruksakti-soc.vercel.app (dashboard di sana kosong, lihat bagian 6)
 
 ---
 
 ## 1. Tujuan aplikasi dan requirement utama
 
-BerukSakti terdiri dari dua halaman web statis:
+BerukSakti terdiri dari dua bagian:
 
-1. **Halaman pencarian BerukSakti** (`google-search.html`): halaman depan pencarian pribadi bergaya Perplexity. Pengguna bisa memilih mencari di web (diteruskan ke Google) atau bertanya ke AI (diteruskan ke claude.ai).
-2. **Dashboard Beruk Sakti Monitoring** (`soc-monitoring.html`): dashboard Security Operations Center (SOC) untuk memantau alert, insiden, intelijen ancaman, otomasi, dan kesehatan SIEM, dilengkapi chatbox Asisten SOC di sisi kanan.
+1. **Halaman pencarian BerukSakti** (`google-search.html`): halaman depan pencarian pribadi bergaya Perplexity. Pengguna memilih mencari di web (diteruskan ke Google) atau bertanya ke AI (diteruskan ke claude.ai). Statis, di-host di Vercel.
+2. **Dashboard Beruk Sakti Monitoring** (`soc-monitoring.html` + backend `server/app.py`): dashboard Security Operations Center yang **hanya menampilkan data asli dari Wazuh** (tanpa data contoh dan tanpa dataset publik), dijalankan di VPS di belakang login.
 
-Requirement utama yang diminta:
+Requirement yang sudah diminta dan dipenuhi:
 
-- Halaman pencarian bergaya Perplexity: sidebar ikon, kotak tanya besar, mode **Cari** / **Tanya AI**.
-- Dashboard dengan sidebar kiri berisi 8 modul:
+- Sidebar kiri dengan 8 modul: SOC Overview, Alert Management, AI Investigation, Threat Intelligence, Incident Management, Automation Center, SIEM Health, Administration.
+- Chatbox Asisten SOC di sisi kanan (aturan kata kunci, menjawab dari data Wazuh).
+- Data hanya dari Wazuh. Bagian yang tidak punya sumber di Wazuh tampil kosong dengan keterangan, bukan angka contoh.
+- Wajib login dengan akun per orang; peran dan izin (RBAC) ditegakkan server; **halaman Administration hanya untuk administrator**; administrator bisa menambah, menghapus, dan menonaktifkan/mengaktifkan akun.
+- Semua waktu ditampilkan dalam **UTC+7 (WIB)**.
+- Peta latar dengan busur dari IP sumber asli (GeoIP Wazuh).
+- Berfungsi di desktop dan HP.
 
-| No | Modul | Fitur utama yang diminta |
-|---|---|---|
-| 1 | SOC Overview | Security KPI, alert trends, severity distribution, top threats |
-| 2 | Alert Management | Alert queue, filtering, severity, assignment, triage status |
-| 3 | AI Investigation | AI alert analysis, log correlation, incident summary, risk scoring |
-| 4 | Threat Intelligence | IOC lookup, IP/domain/hash reputation, enrichment |
-| 5 | Incident Management | Incident tracking, case management, investigation timeline |
-| 6 | Automation Center | Automated playbooks, workflow execution, approval management |
-| 7 | SIEM Health | Cluster health, ingestion monitoring, agent status, pipeline errors |
-| 8 | Administration | User management, RBAC, integration settings, audit |
-
-- Chatbox AI di sisi kanan dashboard (diputuskan: simulasi dulu, menjawab dari data dashboard).
-- Bisa dibuka publik oleh siapa pun lewat website.
-- Tampilan berfungsi di desktop dan HP.
-- Dashboard mengikuti rancangan **SOC Automation** di `multi-agent-orchestration-report.md`: Elastic Security sebagai SIEM, LLM sebagai **FP Classifier** (prioritas: mengurangi false positive), alur Triage → Analisa → Reporting, dan human-in-the-loop. Laporan itu menjadi roadmap backend; dashboard menjadi tampilannya.
+Rancangan awal yang menjadi acuan: `multi-agent-orchestration-report.md` (SOC Automation dengan FP Classifier, belum dibangun) dan `docs/superpowers/specs/2026-11-03-wazuh-lab-backend-design.md` (desain backend Node.js + SQLite; **tidak diikuti**, lihat keputusan 5).
 
 ---
 
@@ -41,39 +33,31 @@ Requirement utama yang diminta:
 
 **Tech stack**
 
-- HTML, CSS, dan JavaScript murni (vanilla), tanpa framework, tanpa build step, tanpa library eksternal.
-- Grafik digambar sendiri dengan SVG; peta ancaman di latar belakang dashboard memakai Canvas 2D.
-- Data contoh disimpan sebagai objek `DATA` di dalam `soc-monitoring.html`.
-- Data publik (dataset riset) diolah offline oleh skrip Node.js `scripts/build-data.js` dari folder `raw/` (tidak masuk Git) menjadi file ringkas di `data/`, yang dimuat halaman lewat `<script src>`.
-- Git + GitHub untuk versi kode.
-- Vercel untuk hosting statis, deploy otomatis setiap `git push` ke `master`.
+- **Frontend:** HTML, CSS, dan JavaScript murni dalam satu file (modul ES, memakai top-level `await`), tanpa framework, tanpa build, tanpa library eksternal. Grafik SVG buatan sendiri; peta latar Canvas 2D.
+- **Backend:** Python 3.12 standar (`http.server`, `sqlite3`, `hashlib.scrypt`), satu file `server/app.py`, tanpa dependency pip. Berjalan sebagai layanan systemd `soc-automation-dashboard` (user `socauto`, sandbox `ProtectSystem=strict`, `MemoryMax=192M`).
+- **SIEM:** Wazuh 4.14.9 (manager, indexer, dashboard) di VPS yang sama. Backend membaca Wazuh Indexer (loopback `127.0.0.1:9200`) dengan akun hanya-baca.
+- **Reverse proxy:** Caddy (HTTPS otomatis) di `wazuh.toyspedia.fun`; `/soc-automation/*` diteruskan ke `127.0.0.1:8081` (prefix dibuang oleh `handle_path`).
+- **VPS:** Ubuntu 24.04, 2 vCPU, 7,4 GB RAM; firewall hanya 22, 80, 443 (agen Wazuh 1514/1515 hanya dari server web).
+- **Hosting statis:** Vercel (auto-deploy tiap `git push` ke `master`) untuk halaman pencarian.
 
-**Struktur folder**
+**Struktur repo**
 
 ```
 D:\Project\aibuilder\
-├── .git/
-├── README.md              # Penjelasan proyek (perlu diperbarui, lihat bagian 6)
-├── PROGRESS.md            # File ini
-├── multi-agent-orchestration-report.md  # Rancangan SOC Automation (roadmap backend), belum di-commit
-├── google-search.html     # Halaman pencarian BerukSakti (gaya Perplexity)
-├── soc-monitoring.html    # Dashboard Beruk Sakti Monitoring, 8 modul + Asisten SOC
-├── vercel.json            # Konfigurasi Vercel: cleanUrls + rewrite "/" ke halaman pencarian
-├── .gitignore             # Mengecualikan raw/ dan .claude/launch.json
-├── data/
-│   ├── eurepoc.js         # Ringkasan EuRepoC (hasil build, ±30 KB)
-│   ├── unsw-nb15.js       # Ringkasan UNSW-NB15 (hasil build, ±15 KB)
-│   └── cisa-kev.js        # Ringkasan CISA KEV (hasil build, ±21 KB)
-├── scripts/
-│   ├── build-data.js      # Mengolah raw/ menjadi data/
-│   └── lib/csv.js         # Pembaca CSV sederhana
-└── raw/                   # Dataset mentah, TIDAK masuk Git
-    ├── eurepoc/           # eurepoc_global_dataset_1_3.csv, eurepoc_codebook_1_2.pdf
-    ├── cisa-kev/          # known_exploited_vulnerabilities.json (±1,8 MB, dari cisa.gov)
-    └── unsw-nb15/         # UNSW-NB15_1.csv (±161 MB), NUSW-NB15_features.csv (diunduh pengguna)
+├── google-search.html            # Halaman pencarian (gaya Perplexity)
+├── soc-monitoring.html           # Dashboard (frontend, dipasang di VPS sebagai index.html)
+├── server/
+│   ├── app.py                    # Backend: login, sesi, RBAC, API Wazuh (read-only)
+│   ├── login.html                # Halaman login
+│   └── manage_users.py           # CLI kelola akun (dijalankan dengan sudo di VPS)
+├── vercel.json                   # cleanUrls + rewrite "/" ke halaman pencarian
+├── docs/superpowers/specs/       # Desain awal lab Wazuh (sebagian usang)
+├── multi-agent-orchestration-report.md   # Rancangan SOC Automation (belum di-commit)
+├── README.md, PROGRESS.md
+└── raw/                          # Sisa dataset lama, tidak dipakai, tidak masuk Git
 ```
 
-Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
+**Di VPS** (`/opt/soc-automation-dashboard/`, pemilik `root:socauto`): `app.py`, `login.html`, `index.html` (= `soc-monitoring.html`), `manage_users.py`, serta cadangan `*.bak-20261103-*`. Data akun: `/var/lib/soc-automation-dashboard/users.json` (milik `socauto`, mode 600). Database audit/triage: `/var/lib/soc-automation-dashboard/ops.sqlite3`. Konfigurasi: `/etc/soc-automation/dashboard.env`.
 
 ---
 
@@ -81,98 +65,85 @@ Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
 
 | File | Isi | Ukuran |
 |---|---|---|
-| `google-search.html` | Halaman pencarian BerukSakti bergaya Perplexity | ±380 baris |
-| `soc-monitoring.html` | Dashboard SOC 8 modul + chatbox Asisten SOC + data contoh + peta ancaman animasi | ±3.130 baris |
+| `soc-monitoring.html` | Dashboard 8 modul + Asisten SOC + peta latar; memuat data dari `api/*` | ±2.510 baris |
+| `server/app.py` | Backend: login/sesi, RBAC, kelola pengguna, endpoint Wazuh | ±610 baris |
+| `server/login.html` | Form login bertema gelap | 66 baris |
+| `server/manage_users.py` | `add / passwd / role / disable / enable / del / list`; kata sandi lewat prompt | ±135 baris |
+| `google-search.html` | Halaman pencarian bergaya Perplexity | 378 baris |
 | `vercel.json` | `cleanUrls: true`, rewrite `/` → `/google-search` | 6 baris |
-| `README.md` | Penjelasan proyek (masih versi lama) | — |
-| `PROGRESS.md` | Rangkuman progres ini | — |
-| `multi-agent-orchestration-report.md` | Rancangan SOC Automation: pipeline Elastic → LLM FP Classifier, skema JSON, aturan keputusan, roadmap 5 fase (dibuat pengguna, belum di-commit) | ±130 baris |
-| `scripts/build-data.js` | Mengolah dataset publik di `raw/` menjadi ringkasan di `data/` (EuRepoC dan UNSW-NB15; file UNSW 161 MB dibaca baris per baris, ±3 detik) | ±270 baris |
-| `data/cisa-kev.js` | Ringkasan CISA KEV versi 2026.10.30: total, 30/90 hari, ransomware, tenggat berjalan, vendor & CWE teratas, 30 KEV terbaru, 15 KEV untuk vendor di daftar integrasi | ±21 KB |
-| `data/unsw-nb15.js` | Ringkasan UNSW-NB15_1: total flow, kategori serangan + severity, timeline per 10 menit, penyerang/sasaran/layanan teratas, 60 kelompok alert | ±15 KB |
-| `scripts/lib/csv.js` | Pembaca CSV (kutip, baris baru di dalam kutip) | ±40 baris |
-| `data/eurepoc.js` | Ringkasan EuRepoC: total, per tahun, negara, pelaku, sektor, MITRE, 40 insiden terbaru, 23 insiden Indonesia | ±30 KB |
-| `.gitignore` | `raw/`, `.claude/launch.json` | 2 baris |
+| `docs/.../wazuh-lab-backend-design.md` | Desain backend lab Wazuh (Node.js); dipakai sebagai gagasan, tidak diimplementasikan persis | 195 baris |
 
-**Riwayat commit**
+**Endpoint backend** (semua di bawah `/soc-automation/`, relatif; semuanya butuh login kecuali `healthz`/`api/login`):
+
+| Endpoint | Izin | Isi |
+|---|---|---|
+| `GET /` | — | Dashboard bila login, form login bila belum |
+| `POST api/login`, `api/logout`, `GET api/me` | — | Sesi |
+| `GET api/overview` | view | Metrik 24 jam, tren 14 hari (hari WIB), severity, taktik MITRE, ancaman, rule level tinggi, status active response |
+| `GET api/alerts` | view | Alert terbaru (maks. 500) + status triage lokal |
+| `GET api/health` | view | Cluster, layanan systemd, agen, EPS, peringatan pipeline |
+| `GET api/geo` | view | IP sumber + koordinat (GeoIP Wazuh) |
+| `GET api/ioc`, `api/ioc-lists` | view | Lookup indikator, daftar IOC bawaan Wazuh, alert rule IOC |
+| `GET api/investigate`, `api/cases[/id]` | view | Korelasi heuristik; kasus lokal |
+| `GET api/audit` | audit | Audit log (100 terakhir) |
+| `GET api/admin` | users | Info koneksi, daftar pengguna, matriks RBAC |
+| `POST api/users/{add,delete,disable,enable}` | users | Kelola akun |
+| `POST api/triage`, `api/cases*` | triage / cases | Ada di backend, belum dipakai UI |
+
+**Riwayat commit penting**
 
 | Commit | Isi |
 |---|---|
-| `d9b0f3d` | Commit awal: dashboard Beruk Sakti Monitoring dan file proyek |
-| `71dcaf2` | Ubah tampilan `google-search.html` menjadi bergaya Perplexity |
-| `15193d4` | Tambah `vercel.json` agar halaman utama membuka `google-search.html` |
-| `b35973d` | Perbaiki rewrite Vercel: tujuan tanpa `.html` karena `cleanUrls` aktif |
-| `51c4c65` | Tambah sidebar panel di dashboard |
-| `b116fd0` | Kembangkan dashboard menjadi 8 modul SOC |
-| `986ad77` | Tambah PROGRESS.md |
-| `1ed0e4f` | Sesuaikan dashboard dengan laporan orkestrasi (FP Classifier, fail-safe, tuning rule, metrik FP) |
-| `25b7672` | Rapikan daftar skor risiko di AI Investigation agar kolom sejajar |
-| `e7577f9` | Tambah chatbox Asisten SOC (simulasi) di sisi kanan dashboard |
-
-**URL publik (sudah dicek mengembalikan HTTP 200)**
-
-| URL | Halaman |
-|---|---|
-| https://beruksakti-soc.vercel.app/ | Halaman pencarian |
-| https://beruksakti-soc.vercel.app/google-search | Halaman pencarian |
-| https://beruksakti-soc.vercel.app/soc-monitoring | Dashboard (modul bisa dibuka langsung dengan `#overview`, `#alerts`, `#ai`, `#intel`, `#incidents`, `#automation`, `#siem`, `#admin`) |
+| `d9b0f3d`–`25b7672` | Dashboard 8 modul, halaman pencarian, Vercel, PROGRESS awal |
+| `e7577f9` | Chatbox Asisten SOC (simulasi) |
+| `c43ee6f`, `a640c13`, `8b9962f` | Dataset publik EuRepoC, UNSW-NB15, CISA KEV (kemudian dihapus) |
+| `24262c0` | Dashboard dihubungkan ke Wazuh live di VPS |
+| `720a098` | Hanya data Wazuh; data contoh, dataset publik, dan peta acak dihapus |
+| `a9c9a82` | Login aplikasi dengan akun per orang |
+| `7646e7b` | RBAC enam peran + waktu WIB |
+| `6675fae` | Peta latar dengan busur dari GeoIP Wazuh |
+| `9113ef1` | Daftar IOC Wazuh + kelola pengguna dari dashboard |
+| `b1bc7a6` | Administration hanya untuk administrator; audit log ke Incident Management |
 
 ---
 
 ## 4. Fitur yang sudah selesai dan sudah diuji
 
-Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 dan 1440×860, HP 375×812), dengan pengecekan console error dan pengujian interaksi lewat JavaScript. Tidak ada test otomatis di repo.
+Pengujian: tiap perubahan backend diuji di **instance terpisah di VPS** (port 8091, sandbox systemd yang sama dengan produksi, akun uji acak yang dihapus sesudahnya) memakai skrip `curl` per peran, lalu dicek di browser lewat tunnel SSH; setelah itu di-deploy dengan cadangan dan rollback otomatis. Tidak ada test otomatis di repo.
 
-### Halaman pencarian (`google-search.html`)
-
-- [x] Tampilan bergaya Perplexity: sidebar ikon (Beranda, Jelajah, Pustaka), logo serif "beruksakti", kotak tanya yang memanjang otomatis, chip saran cepat.
-- [x] Mode **Cari** (ke Google) dan **Tanya AI** (ke claude.ai); mode terakhir diingat di `localStorage`.
-- [x] Enter mengirim, Shift+Enter baris baru, `/` fokus ke kotak tanya.
-- [x] Saran dari riwayat pencarian dan kata kunci contoh, bisa dipilih dengan panah atas/bawah.
-- [x] Pencarian suara (Web Speech API, bahasa Indonesia).
-- [x] Responsif di HP (sidebar pindah ke bawah). Diuji: desktop dan HP, tanpa error console.
-
-### Dashboard (`soc-monitoring.html`)
-
-- [x] **Sidebar 8 modul** dengan badge angka yang ikut berubah (alert belum ditugaskan, insiden kritis, persetujuan tertunda, sumber log/agen bermasalah). Di HP berubah jadi menu geser di atas, tanpa scroll horizontal.
-- [x] **Navigasi modul** lewat klik dan lewat hash URL (`#alerts`, dst.).
-- [x] **1. SOC Overview**: 6 KPI, grafik tren alert 14 hari (tooltip), distribusi severity 7 hari dengan perbandingan minggu sebelumnya, tabel ancaman teratas, grafik taktik MITRE ATT&CK, **metrik pengurangan false positive** (FP rate, miss rate, waktu analis per alert, alert yang butuh sentuhan manusia, usulan tuning disetujui; warna sesuai arah perbaikan), dan **Top 10 rule paling berisik** dengan FP rate.
-- [x] **2. Alert Management**: antrean 14 alert, filter (cari, severity, status, analis), ubah analis dan status triage langsung di tabel, kolom **Label AI** (`ai-triage:fp-suspected` / `tp-likely` / `needs-review`). Diuji: penugasan menurunkan badge 5 → 4; filter Critical menampilkan 3 baris; 3 alert punya label AI sesuai aturan keputusan.
-- [x] **3. AI Investigation** (mengikuti laporan orkestrasi): data FP Classifier memakai skema JSON laporan (`verdict`, `confidence`, `reasoning`, `evidence`, `recommended_action`, `tuning_suggestion`); **aturan keputusan** (label FP hanya bila confidence ≥ 0,9, ada bukti, dan aset non-kritikal; selain itu eskalasi); **fail-safe** (output tidak valid atau tanpa bukti selalu dieskalasi); 5 KPI (diduga FP, dieskalasi, kesesuaian dengan analis, miss rate, golden set); roadmap 5 fase dengan fase berjalan "Mode bayangan"; daftar skor risiko dengan kolom ID, nama, bar, dan angka yang sejajar di semua baris; kartu per alert/insiden berisi alasan, bukti berupa field log, korelasi log, rekomendasi, usulan tuning, dan output JSON. Diuji: 7 investigasi menghasilkan 2 label FP dan 5 eskalasi (1 karena fail-safe pada ALR-90411 yang tanpa bukti).
-- [x] **4. Threat Intelligence**: lookup IOC dengan deteksi tipe (IPv4, domain, MD5/SHA-1/SHA-256), hasil reputasi dan enrichment (skor, negara, ASN, tag, insiden terkait), tabel feed, tabel IOC yang bisa diklik. Diuji: IOC dikenal, IP tidak dikenal, dan format salah.
-- [x] **Trafik IDS (data nyata UNSW-NB15)**: di SOC Overview, bagian "Serangan jaringan terdeteksi IDS" dengan 4 KPI (700.001 flow, 22.215 flow serangan = 3,2%, 2.871 alert setelah dedup, 4 IP penyerang ke 10 host), grafik flow serangan per 10 menit ditumpuk menurut severity (tooltip per kategori), tabel 9 kategori serangan dengan severity, dan tabel penyerang/sasaran/layanan. Di Alert Management, tabel "Alert IDS dari trafik nyata": 60 kelompok alert (kategori + sumber + tujuan + layanan) dengan filter severity, jumlah flow, dan waktu pertama/terakhir. Asisten SOC bisa menjawab "serangan jaringan / IDS". Diuji lewat server lokal (desktop dan HP, tanpa error console).
-- [x] **Feed CISA KEV (data nyata, ide dari AiSOC)** di Threat Intelligence: 5 KPI (1.766 KEV, 36 baru dalam 30 hari, 361 dipakai ransomware, 11 tenggat masih berjalan, 10 KEV vendor stack kita dalam 90 hari), daftar KEV (vendor di daftar integrasi atau 30 terbaru) dengan tooltip ringkasan, vendor & CWE teratas, atribusi sumber. Asisten SOC menjawab "kerentanan/KEV" dan detail CVE tertentu. Diuji lewat server lokal.
-- [x] **Investigation Ledger (ide dari AiSOC)** di setiap kartu AI Investigation: langkah berurutan (konteks dimuat → kueri log per event → penyaring prompt → FP Classifier dengan bukti yang dikutip → aturan keputusan), bukti diberi label `[B1]`, `[B2]`, … agar verdict bisa ditelusuri. Diuji: 7 ledger (5–8 langkah), ALR-90411 berakhir dengan langkah fail-safe merah.
-- [x] **Tampilan kosong yang jujur (ide dari AiSOC)**: bila `data/*.js` tidak ada, bagian KEV, lanskap global, trafik IDS, dan alert IDS diganti kotak penjelasan cara membuat datanya, tanpa angka contoh; Asisten juga mengaku datanya belum dimuat. Diuji dengan membuka file lewat pratinjau `data:` (data publik tidak termuat).
-- [x] **Lanskap ancaman global (data nyata EuRepoC)** di Threat Intelligence: 5 KPI (3.414 insiden 2000–2024, 700 pada 2024, 1.014 terkait aktor negara, 502 ransomware dengan 98 memakai zero-day, 23 menyasar Indonesia), grafik insiden per tahun dengan tooltip jenis insiden, negara sasaran, asal pelaku dan kategori pelaku, sektor sasaran, teknik MITRE initial access/impact, daftar insiden (40 terbaru global atau 23 insiden Indonesia), dan atribusi sumber + lisensi. Bagian ini tersembunyi otomatis kalau `data/eurepoc.js` tidak ada. Asisten SOC bisa menjawab "lanskap ancaman global" dan "serangan ke Indonesia". Diuji lewat server lokal (desktop dan HP, tanpa error console).
-- [x] **5. Incident Management**: tabel kasus dengan SLA (lewat SLA merah), timeline investigasi per kasus (klik baris), tabel insiden yang bisa dicari dan diurutkan. Diuji: klik kasus mengganti timeline.
-- [x] **6. Automation Center**: tombol Setujui/Tolak aksi, **antrean persetujuan tuning rule** dari FP Classifier (exception/ubah kondisi, masa berlaku, dasar usulan; exception dengan wildcard ditandai "cakupan luas"), playbook dengan toggle aktif, riwayat eksekusi. Diuji: menyetujui APR-311 menurunkan badge dan mengubah status eksekusi menjadi Running; menyetujui TUN-042 menurunkan badge 6 → 5 dan tercatat di audit log.
-- [x] **7. SIEM Health**: status cluster (Green/Yellow/Red), CPU/heap/disk tiap node, ingestion per sumber log, status agen, error pipeline.
-- [x] **8. Administration**: tabel pengguna (MFA, status), matriks RBAC, integrasi dengan toggle, audit log yang ikut mencatat perubahan di halaman. Diuji: audit log bertambah setelah penugasan dan persetujuan.
-- [x] **Asisten SOC (chatbox kanan, simulasi)**: panel di sisi kanan yang bisa dibuka/tutup (tombol "Tanya AI", ✕ tutup, ↺ percakapan baru, Esc menutup di layar sempit); menempel di kanan pada layar > 1100 px dan terbuka otomatis pada layar ≥ 1440 px, menutupi halaman pada layar sempit. Menjawab dari objek `DATA`: ringkasan kondisi SOC, detail ID (`INC-`, `ALR-`, `CASE-`, `APR-`, `TUN-`), reputasi IOC (IP/domain/hash), insiden kritis & SLA, alert belum ditugaskan, false positive, rule berisik & tuning, persetujuan, kesehatan SIEM, playbook, KPI, admin, dan "jelaskan halaman ini". Jawaban punya tombol yang membuka modul terkait (mis. timeline kasus, Lookup IOC). Pertanyaan di luar data ditolak dengan jelas. Diuji: 18 jenis pertanyaan, tombol navigasi, tampilan desktop 1440 px dan HP, tanpa error console.
-
-### Deploy
-
-- [x] Repo di-push ke GitHub.
-- [x] Project Vercel `beruksakti-soc` (team BerukSakti) terhubung ke repo; deploy otomatis saat push ke `master`. Diuji: tiga URL di atas mengembalikan 200 (dicek ulang 3 November 2026), dan versi terbaru dengan Asisten SOC sudah tayang.
+- [x] **Login dan sesi**: hash scrypt; cookie `HttpOnly`, `SameSite=Lax`, `Secure` di belakang HTTPS; sesi habis setelah 2 jam tidak aktif atau 12 jam total; batas 5 percobaan gagal per 15 menit (per IP dan per nama); cek `Origin` pada semua POST; CSP dan `Cache-Control: no-store`; akun/peran dibaca ulang di setiap permintaan. Diuji: 19 skenario login.
+- [x] **RBAC enam peran** (Administrator, SOC Manager, Analyst T3/T2/T1, Read-only; matriks di halaman Administration, ditegakkan server). Diuji per peran: triage, kasus, daftar pengguna, audit.
+- [x] **Kelola pengguna** (admin): tambah, hapus, nonaktifkan/aktifkan; sesi dicabut seketika; tidak bisa menghapus/menonaktifkan diri sendiri; minimal satu admin aktif; tercatat di audit log. Diuji 19 skenario.
+- [x] **Administration hanya untuk administrator**: `api/admin` 403 untuk peran lain, menu dan rute disembunyikan.
+- [x] **SOC Overview**: alert 24 jam, tren harian, severity, taktik MITRE, ancaman teratas, rule level tinggi, agen aktif.
+- [x] **Alert Management**: 500 alert terbaru dari 7 hari (hanya baca), filter, status triage lokal.
+- [x] **AI Investigation**: korelasi heuristik per alert (skor risiko dari level rule, alert terkait 24 jam, tag MITRE). Bukan LLM.
+- [x] **Threat Intelligence**: lookup IOC terhadap daftar bawaan Wazuh (199 IP, 200 domain, 199 hash) dan kemunculannya di log; IP sumber teratas; alert rule IOC.
+- [x] **Incident Management**: tabel kasus lokal dan timeline (saat ini kosong); kartu audit log.
+- [x] **Automation Center**: status active response Wazuh (saat ini tidak ada).
+- [x] **SIEM Health**: cluster, layanan, agen, EPS, peringatan pipeline.
+- [x] **Administration**: koneksi, pengguna, RBAC, integrasi.
+- [x] **Peta latar**: titik benua + busur animasi dari IP sumber asli 24 jam (52 IP, 22 negara saat diuji), warna menurut severity.
+- [x] **Asisten SOC**: aturan kata kunci, menjawab dari data Wazuh, bisa mencari IP/hash ke Wazuh.
+- [x] **Waktu WIB** di seluruh tampilan, termasuk batas hari pada hitungan harian.
+- [x] **Halaman pencarian** (`google-search.html`): mode Cari/Tanya AI, saran riwayat, pencarian suara, responsif.
 
 ---
 
 ## 5. Fitur yang belum selesai
 
-- [ ] **Data asli milik SOC sendiri**: selain bagian trafik IDS (UNSW-NB15) dan lanskap ancaman global (EuRepoC), semua angka, nama, IOC, dan hasil "AI" adalah data contoh di objek `DATA`. Belum terhubung ke SIEM, EDR, feed intelijen, atau model AI sungguhan. Kedua dataset publik juga bukan data jaringan kita.
-- [ ] **UNSW-NB15 baru file pertama** (`UNSW-NB15_1.csv`, ±2 jam serangan). File `_2` sampai `_4` bisa ditambahkan ke `raw/unsw-nb15/` dan otomatis ikut diolah. Data UNSW belum disambungkan ke antrean alert utama, AI Investigation, atau Asisten selain ringkasannya.
-- [ ] **Asisten SOC dengan AI sungguhan**: chatbox masih simulasi berbasis kata kunci. Untuk memakai model sungguhan, `askAssistant()` diganti dengan panggilan ke backend (mis. `/api/chat` yang memanggil Claude API dengan API key di environment variable Vercel), setelah dashboard punya login dan pembatas pemakaian.
-- [ ] **Pipeline SOC Automation** dari laporan orkestrasi belum dibangun: orchestrator (n8n/Python), dedup & grouping, enrichment ES|QL, pre-filter deterministik, panggilan LLM, validasi skema, dan penulisan tag balik ke Elastic. Dashboard baru menampilkan bentuk hasilnya.
-- [ ] **Fase 0–1 roadmap** (analisis FP 30–90 hari, golden set berlabel) belum dikerjakan; angka fase, kesesuaian, dan golden set di dashboard adalah contoh.
-- [ ] **Keputusan terbuka dari laporan**: volume alert per hari, jumlah analis, versi/lisensi Elastic, pilihan model LLM (cloud atau self-hosted), kebijakan privasi data.
-- [ ] **Penyimpanan perubahan**: penugasan alert, status triage, persetujuan aksi, toggle playbook/integrasi, dan audit log hanya tersimpan di memori. Hilang saat halaman di-refresh.
-- [ ] **Login dan hak akses**: dashboard terbuka untuk siapa pun. RBAC dan manajemen pengguna baru berupa tampilan, belum membatasi akses.
-- [ ] **Aksi nyata**: tombol Setujui, toggle integrasi, dan lookup IOC tidak memanggil sistem luar mana pun.
-- [ ] **Data "live"**: tidak ada refresh otomatis; waktu dan angka tetap per 2 November 2026.
-- [ ] **Halaman pencarian**: menu Pustaka dan link di footer (Tentang, Privasi, Persyaratan, Bahasa Indonesia) belum punya tujuan.
-- [ ] **README.md** belum diperbarui (lihat bagian 6).
-- [ ] **GitHub Pages** belum diaktifkan (opsional, karena Vercel sudah dipakai).
+- [ ] **Ubah peran akun dan reset kata sandi dari dashboard** (sekarang lewat `manage_users.py role` / `passwd`); ganti kata sandi sendiri; MFA.
+- [ ] **Triage dan kasus dari UI**: backend `POST api/triage` dan `api/cases*` sudah ada, tapi antarmuka masih hanya baca (belum dihubungkan agar tidak menulis ke database tanpa uji UI).
+- [ ] **Playbook, persetujuan aksi, dan riwayat eksekusi** (izin sudah ada di matriks, ditandai "belum ada fiturnya"); tidak ada sumber data di Wazuh. Butuh SOAR atau skrip active response.
+- [ ] **Integrasi eksternal** (VirusTotal, MISP, OTX) dan feed IOC otomatis. Wazuh belum punya integrasi apa pun (`<integration>` = 0); daftar IOC bawaan statis. Mengubahnya butuh perubahan konfigurasi Wazuh dan restart manager.
+- [ ] **Incident dari data asli** dan **FP Classifier / LLM** (roadmap di `multi-agent-orchestration-report.md`); Fase 0 (analisis FP 30–90 hari) belum dikerjakan.
+- [ ] **Metrik MTTD/MTTR/FP rate**: tidak ada sumber di Wazuh, jadi tidak ditampilkan.
+- [ ] **Refresh otomatis**: data dimuat saat halaman dibuka; perlu muat ulang untuk memperbarui.
+- [ ] **Metrik CPU/heap/disk per node** belum tersedia dari API.
+- [ ] **Tampilan alert lebih dari 500** (pagination) dan filter rentang waktu.
+- [ ] **Asisten SOC dengan model AI sungguhan** (`askAssistant()` siap diganti).
+- [ ] **Keputusan Vercel**: nonaktifkan, atau ubah jadi halaman pengarah ke dashboard.
+- [ ] **Halaman pencarian**: menu Pustaka dan link footer belum punya tujuan.
 
 ---
 
@@ -180,37 +151,36 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 
 | Kendala | Dampak | Status |
 |---|---|---|
-| `README.md` masih menjelaskan versi lama halaman pencarian (gaya Google, tombol "Saya Lagi Beruntung", "Chat with AI") dan tidak menyebut dashboard maupun Vercel. | Dokumentasi menyesatkan. | Belum diperbaiki |
-| Pratinjau `data:` URL di browser pane aplikasi Claude tidak bisa memuat `data/*.js` (path relatif). | Trafik IDS dan lanskap ancaman global tidak muncul di pratinjau itu. Uji lewat server lokal (`.claude/launch.json`, port 8137) atau Vercel. Membuka file langsung dengan klik dua kali tetap jalan. | Dibiarkan, cara uji dicatat |
-| Lisensi dataset non-komersial (EuRepoC CC BY-NC 4.0; UNSW-NB15 hanya untuk riset akademik). | BerukSakti harus tetap proyek non-komersial (sudah dikonfirmasi pengguna) dan sumber wajib dicantumkan. | Dipatuhi |
-| Dashboard publik tanpa login. | Aman selama datanya contoh. Tidak boleh diisi data SIEM asli sebelum ada autentikasi. | Kendala desain |
-| Di pratinjau `data:` URL (browser pane aplikasi Claude) hash URL tidak bisa berubah. | Navigasi lewat hash tidak jalan di pratinjau. Sudah diatasi: klik sidebar langsung mengganti modul. Di Vercel normal. | Sudah ditangani |
-| Grafik di dashboard terlihat terlalu besar sesaat setelah ukuran jendela berubah drastis. | Kosmetik, hilang setelah ±120 ms saat grafik digambar ulang. | Bukan bug, dibiarkan |
-| Peringatan Git `LF will be replaced by CRLF` setiap commit. | Tidak berdampak; hanya akhir baris di Windows. | Dibiarkan |
-| Branch kerja `master`, sedangkan nama branch utama yang dianjurkan `main`. | Vercel dan GitHub memakai `master` sebagai default, jadi tidak masalah. | Dibiarkan |
-| Akun Vercel belum memakai 2FA (tawaran 2FA ditunda dengan "Remind Me Later"). | Risiko keamanan akun. | Keputusan pemilik akun |
+| **Vercel menampilkan dashboard kosong** dengan peringatan "Tidak bisa terhubung ke Wazuh". | Tidak ada API di Vercel; tidak ada data bocor. Halaman pencarian tetap normal. | Menunggu keputusan |
+| **Sesi disimpan di memori**: restart layanan mengeluarkan semua pengguna. | Setiap deploy memaksa login ulang. | Diterima; bisa dipindah ke SQLite |
+| `/etc/soc-automation/caddy-auth.txt` berisi kata sandi basic auth lama yang tak terpakai; `/etc/caddy/Caddyfile.bak-20261103` berisi hash lamanya. | Rahasia menganggur di server. | Menunggu persetujuan hapus |
+| `/etc/soc-automation/users.json.dipindah-20261103` adalah salinan lama berkas akun (tidak dipakai). | Bisa membingungkan. | Hapus bila sudah yakin |
+| **Tujuan busur peta dipatok ke Jakarta** (`MAP_TARGET` di `soc-monitoring.html`); IP sendiri (mis. IP login SSH) ikut tergambar. | Tampilan, bukan data. | Bisa disesuaikan |
+| Daftar IOC bawaan kecil dan statis. | "Tidak ada di daftar" belum berarti aman. | Ditulis jelas di UI |
+| **Zona waktu server Wazuh +08:00**, tampilan +07:00. | Waktu log mentah di server berbeda 1 jam dari tampilan; dashboard sudah mengonversi. | Sudah ditangani |
+| Peringatan pipeline asli di SIEM Health: `indexer-connector ... wazuh-states-inventory-*` gagal diinisialisasi. | Indeks inventaris Wazuh belum terbentuk; perlu diselidiki sisi Wazuh. | Belum diselidiki |
+| Tidak ada test otomatis; pengujian lewat skrip sementara. | Regresi baru ketahuan saat diuji ulang manual. | Belum diperbaiki |
+| Peringatan Git `LF will be replaced by CRLF`. | Tidak berdampak. | Dibiarkan |
+| Akun Vercel belum memakai 2FA. | Risiko keamanan akun. | Keputusan pemilik akun |
 
 ---
 
 ## 7. Keputusan teknis penting
 
-1. **Satu file per halaman, tanpa framework dan tanpa build.** Bisa dibuka langsung dengan klik dua kali, mudah di-host statis, tidak ada dependency.
-2. **Grafik digambar sendiri (SVG/Canvas), bukan library chart.** Menghindari ketergantungan CDN dan menjaga ukuran tetap kecil.
-3. **Semua data di satu objek `DATA`** di `soc-monitoring.html`, ditandai "Data contoh (ganti dengan data SIEM Anda)". Saat nanti diganti dengan data asli, cukup objek ini yang diubah atau diisi dari API.
-4. **Satu halaman, banyak modul** (`<section class="soc-view">` yang disembunyikan/ditampilkan), dengan routing lewat hash URL dan klik sidebar. Tidak perlu server-side routing.
-5. **Grafik hanya digambar saat modulnya terlihat**, karena ukurannya diukur dari kotak di layar (kotak tersembunyi berukuran 0).
-6. **Teks dari data selalu dimasukkan dengan `textContent`**, bukan `innerHTML`, supaya aman dari injeksi HTML ketika nanti diisi data asli.
-7. **Mode gelap saja** untuk dashboard (gaya ruang SOC); warna status konsisten: hijau = sehat, kuning = perlu perhatian, merah = bermasalah, biru = sedang berjalan.
-8. **Vercel dengan `cleanUrls`**: alamat tanpa `.html`; tujuan rewrite juga harus ditulis tanpa `.html` (penyebab 404 pada deploy pertama).
-9. **Hosting di Vercel lewat integrasi GitHub**, bukan Vercel CLI: setiap `git push` ke `master` otomatis deploy.
-10. **Perubahan data di halaman sengaja tidak disimpan** (penugasan, persetujuan, toggle, percakapan chat) karena ini data contoh bersama; penyimpanan sungguhan butuh backend. `localStorage` hanya dipakai untuk preferensi tampilan per browser (mode Cari/Tanya AI di halaman pencarian, panel Asisten SOC terbuka atau tertutup).
-11. **Data AI mengikuti skema JSON FP Classifier dari laporan orkestrasi**, supaya output LLM nanti bisa ditampilkan tanpa diubah. Field tambahan (`risk`, `asset_critical`, `correlated`, `next_steps`) diperlakukan sebagai hasil enrichment pipeline, bukan output LLM.
-12. **Aturan keputusan dan fail-safe dijalankan di dashboard (`decide_ai`)**, bukan dipercaya dari LLM: output tidak valid atau tanpa bukti selalu jadi `needs-review`. Di backend nanti aturan yang sama harus diterapkan sebelum tag ditulis ke Elastic.
-13. **Tuning rule selalu lewat persetujuan manusia**, dan exception yang memakai wildcard ditandai agar ditinjau ulang (prinsip "exception sempit + masa berlaku" dari laporan).
-14. **Asisten SOC dibuat simulasi dulu** (dipilih pengguna): tanpa API key dan biaya, aman selama dashboard publik. Semua jawaban lewat satu fungsi `askAssistant(text)` yang mengembalikan blok `{p}`, `{ul}`, `{go}`, sehingga backend AI nanti cukup mengembalikan format yang sama. Status buka/tutup panel diingat per browser di `localStorage`.
-15. **Data publik diolah offline, bukan dimuat mentah**: dataset mentah disimpan di `raw/` (di luar Git), diringkas oleh `scripts/build-data.js` menjadi `data/*.js` (`window.EUREPOC`, `window.UNSW`) yang kecil. Dimuat dengan `<script src>` (bukan `fetch`) supaya tetap jalan saat file dibuka langsung. Setiap data publik wajib menampilkan sumber dan lisensinya, dan dibedakan jelas dari data SOC contoh. Bagian yang datanya tidak ada akan tersembunyi otomatis.
-16. **Waktu UNSW-NB15 tidak digeser** (berbeda dari rencana awal): serangan di file pertama hanya berlangsung ±2 jam pada 22 Januari 2015, jadi ditampilkan dengan waktu aslinya per 10 menit agar tidak menyesatkan. Alert UNSW dikelompokkan seperti SIEM (kategori + sumber + tujuan + layanan, mengikuti prinsip dedup di laporan orkestrasi); severity per kategori adalah pemetaan kita sendiri (Backdoor/Shellcode/Worm = Critical, Exploit/DoS = High, Recon/Fuzzer/Analysis = Medium, Generic = Low).
-17. **Mengambil ide dari AiSOC (github.com/beenuar/AiSOC), bukan memasang AiSOC** (dipilih pengguna): dashboard tetap statis. Yang diambil: feed CISA KEV (tanpa API key), Investigation Ledger dengan kutipan bukti, dan tampilan kosong yang jujur. AiSOC tetap opsi backend di masa depan (self-host Docker, ±8 GB RAM, konektor Elastic). "Stack kita" untuk KEV sementara dicocokkan dari nama vendor di daftar integrasi, bukan inventaris aset.
+1. **Satu file per halaman, tanpa framework dan tanpa build**; grafik SVG buatan sendiri.
+2. **Dashboard hanya memakai data Wazuh.** Data contoh, dataset publik (UNSW-NB15, EuRepoC, CISA KEV), dan peta serangan acak dihapus agar tidak ada angka palsu di samping data asli. Bagian tanpa sumber tampil kosong dengan penjelasan. Riwayat kodenya ada di git.
+3. **Backend dan dashboard di VPS yang sama dengan Wazuh**, satu origin: cookie sesi sederhana, kredensial Wazuh dan port indexer tidak keluar dari VPS. Akses ke Wazuh hanya-baca (akun `kibanaserver`).
+4. **URL di frontend selalu relatif** (`api/...`) karena Caddy `handle_path` membuang prefix `/soc-automation`; URL absolut akan jatuh ke Wazuh Dashboard.
+5. **Memakai backend Python yang sudah ada di VPS**, bukan Node.js + SQLite seperti desain awal di `docs/`: nol dependency, sudah terpasang sebagai layanan, cukup diperluas.
+6. **Wazuh tidak diubah.** GeoIP ternyata sudah aktif di pipeline Filebeat (field `GeoLocation` terisi di indexer); daftar IOC dan konfigurasi dibaca saja. Perubahan konfigurasi Wazuh (restart manager) hanya dengan persetujuan eksplisit.
+7. **Izin ditegakkan di server per endpoint**, bukan hanya disembunyikan di UI. Definisi peran (`ROLE_DEFS`) satu sumber di `app.py` dan dikirim ke UI. Nama lama `viewer` dan `analyst` dipetakan ke `readonly` dan `analyst_t2`.
+8. **Berkas akun di `/var/lib/soc-automation-dashboard/`**, karena sandbox `ProtectSystem=strict` membuat `/etc` hanya-baca bagi layanan; ini memungkinkan admin mengelola akun dari dashboard.
+9. **Kata sandi tidak pernah lewat chat atau argumen shell**: `manage_users.py` memakai `getpass`; form dashboard mengirim lewat HTTPS; yang disimpan hanya hash scrypt.
+10. **Audit log pindah ke Incident Management** supaya izin "Lihat audit log" milik Manager dan Read-only tetap bermakna setelah Administration dijadikan khusus admin.
+11. **Semua waktu WIB (UTC+7)** lewat `Asia/Jakarta` di browser; batas hari pada agregasi memakai `time_zone: +07:00` di Wazuh Indexer.
+12. **Pengujian di instance terpisah dengan sandbox yang sama**, akun uji acak, lalu dihapus; deploy dengan cadangan `*.bak-*`, pemeriksaan otomatis, dan rollback bila gagal. Layanan produksi tidak dipakai untuk uji.
+13. **Hasil "AI Investigation" diberi label heuristik** (aturan, bukan model) supaya tidak menyesatkan; teks dari data selalu dimasukkan dengan `textContent`.
+14. **Proyek non-komersial**; Vercel tetap dipakai untuk halaman pencarian lewat integrasi GitHub.
 
 ---
 
@@ -218,14 +188,14 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 
 Urutan yang disarankan:
 
-1. **Perbarui `README.md`**: jelaskan kedua halaman, URL Vercel, cara deploy, cara menjalankan `node scripts/build-data.js`, dan sumber data.
-2. **Jawab keputusan terbuka dari laporan orkestrasi** (volume alert, jumlah analis, versi Elastic, model LLM, kebijakan privasi), lalu jalankan **Fase 0**: ekspor alert 30–90 hari dari Elastic, hitung Top 10 rule paling berisik, dan catat baseline FP rate, waktu analis, MTTD/MTTR. Hasilnya menggantikan data contoh di SOC Overview.
-3. **Tambahkan autentikasi** sebelum data asli masuk (mis. Vercel Password Protection, SSO, atau login sendiri), lalu terapkan RBAC yang sudah ada di modul Administration.
-4. **Bangun pipeline FP Classifier** (n8n/Python di server sendiri, bukan di Vercel) sesuai laporan: dedup, enrichment, pre-filter, LLM dengan output JSON tervalidasi, aturan keputusan + fail-safe yang sama dengan `decide_ai`, lalu backend kecil yang menyediakan hasilnya ke dashboard dalam bentuk objek `DATA`.
-5. **Sambungkan Asisten SOC ke AI sungguhan** setelah login ada: endpoint backend (mis. Vercel Serverless Function `/api/chat`) yang memanggil Claude API dengan API key di environment variable Vercel, diberi konteks data dashboard, dibatasi pemakaiannya, lalu `askAssistant()` diarahkan ke endpoint itu dengan format blok yang sama.
-6. **Simpan perubahan pengguna** (penugasan, status triage, persetujuan aksi dan tuning, toggle, audit log) ke database lewat backend.
-7. **Sambungkan aksi nyata**: lookup IOC ke API reputasi, persetujuan aksi ke mesin SOAR/playbook, persetujuan tuning ke exception rule di Elastic, toggle integrasi ke konfigurasi asli.
-8. **Refresh data otomatis** (polling berkala) dan tampilkan waktu pembaruan terakhir.
-9. **Lengkapi halaman pencarian**: tujuan untuk menu Pustaka (mis. riwayat pencarian) dan link footer.
-10. **Pertimbangkan memecah `soc-monitoring.html`** (±3.130 baris) menjadi file CSS/JS/data terpisah begitu mulai terhubung ke API.
-11. **Opsional**: commit `multi-agent-orchestration-report.md` ke repo sebagai dokumen desain; aktifkan 2FA di akun Vercel; ganti nama branch ke `main` bila diinginkan.
+1. **Bersihkan sisa di VPS** (dengan persetujuan): hapus `caddy-auth.txt`, `Caddyfile.bak-20261103`, dan `users.json.dipindah-20261103`; pastikan tidak ada cadangan lain yang berisi rahasia.
+2. **Putuskan nasib Vercel**: nonaktifkan project dashboard, atau ganti dengan halaman pengarah ke `wazuh.toyspedia.fun/soc-automation/`.
+3. **Selidiki peringatan `indexer-connector`** di SIEM Health (indeks `wazuh-states-inventory-*`).
+4. **Tombol ubah peran dan reset kata sandi** di halaman Administration; ganti kata sandi sendiri; pertimbangkan MFA (TOTP).
+5. **Hubungkan triage dan kasus ke UI** (backend sudah ada), dengan audit log per aksi.
+6. **Refresh otomatis** (polling) dan pagination alert; pindahkan sesi ke SQLite agar restart tidak mengeluarkan pengguna.
+7. **Feed IOC otomatis** ke Wazuh (daftar CDB dari abuse.ch/OTX lewat skrip terjadwal) dan integrasi VirusTotal; perlu restart manager, jadi dijadwalkan dan disetujui dulu.
+8. **Fase 0 laporan orkestrasi**: ekspor alert 30–90 hari dari Wazuh, hitung rule paling berisik dan estimasi FP, lalu bangun FP Classifier dengan aturan keputusan dan fail-safe, tag ditulis kembali dengan persetujuan manusia.
+9. **Asisten SOC dengan model sungguhan** setelah login ada (sudah): `askAssistant()` memanggil endpoint backend, API key hanya di server.
+10. **Test otomatis** untuk backend (login, RBAC, kelola pengguna) menggantikan skrip sementara; pertimbangkan memecah `soc-monitoring.html` menjadi file terpisah.
+11. **Opsional**: commit `multi-agent-orchestration-report.md`; perbarui atau hapus `docs/.../wazuh-lab-backend-design.md`; atur ulang `MAP_TARGET` dan kecualikan IP sendiri dari peta; aktifkan 2FA akun Vercel.
