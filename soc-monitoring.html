@@ -206,8 +206,9 @@ body::after {
 .sev-bar { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; }
 .sev-bar span { min-width: 3px; }
 /* AI Investigation: risk list, correlated log lines */
-.risk-list { display: grid; gap: 8px; }
-.risk-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(80px, 2fr) 2.5em; gap: 10px; align-items: center; font-size: 13px; }
+/* Rows share the list's columns (display: contents) so IDs, names, bars and scores line up */
+.risk-list { display: grid; grid-template-columns: max-content minmax(0, 1fr) minmax(80px, 2fr) 2.5em; gap: 10px 12px; align-items: center; font-size: 13px; }
+.risk-row { display: contents; }
 .risk-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .risk-bar { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
 .risk-bar span { display: block; height: 100%; }
@@ -257,7 +258,7 @@ body::after {
 .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 640px) {
   .soc-opt { display: none; }
-  .risk-row { grid-template-columns: auto minmax(0, 1fr) 2.5em; }
+  .risk-list { grid-template-columns: max-content minmax(0, 1fr) 2.5em; }
   .risk-bar { display: none; }
   .soc-title { font-size: 26px; }
 }
