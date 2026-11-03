@@ -5,7 +5,10 @@
   sudo python3 manage_users.py passwd budi
   sudo python3 manage_users.py role budi analyst_t2
   sudo python3 manage_users.py del budi
+  sudo python3 manage_users.py disable budi        # atau: enable budi
   sudo python3 manage_users.py list
+
+Administrator juga bisa menambah, menghapus, dan menonaktifkan akun dari halaman Administration.
 
 Peran (matriks izin lengkap ada di halaman Administration dan di app.py):
   admin        Administrator: semua izin
@@ -19,6 +22,7 @@ Kata sandi tidak pernah diberikan sebagai argumen supaya tidak masuk riwayat she
 import argparse
 import getpass
 import grp
+import pwd
 import hashlib
 import json
 import os
@@ -26,7 +30,7 @@ import re
 import sys
 import tempfile
 
-USERS_FILE = os.environ.get("USERS_FILE", "/etc/soc-automation/users.json")
+USERS_FILE = os.environ.get("USERS_FILE", "/var/lib/soc-automation-dashboard/users.json")
 SERVICE_GROUP = os.environ.get("SERVICE_GROUP", "socauto")
 ROLES = ("admin", "manager", "analyst_t3", "analyst_t2", "analyst_t1", "readonly")
 LEGACY = {"viewer": "readonly", "analyst": "analyst_t2"}
@@ -54,9 +58,10 @@ def save(users):
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=2, sort_keys=True)
         f.write("\n")
-    os.chmod(tmp, 0o640)
+    os.chmod(tmp, 0o600)
     try:
-        os.chown(tmp, 0, grp.getgrnam(SERVICE_GROUP).gr_gid)
+        # Layanan berjalan sebagai socauto dan menulis berkas ini sendiri (kelola pengguna dari dashboard).
+        os.chown(tmp, pwd.getpwnam(SERVICE_GROUP).pw_uid, grp.getgrnam(SERVICE_GROUP).gr_gid)
     except (KeyError, PermissionError):
         pass
     os.replace(tmp, USERS_FILE)
@@ -83,7 +88,7 @@ def main():
     a.add_argument("name")
     a.add_argument("--role", choices=ROLES, default="readonly")
     sub.add_parser("list")
-    for c in ("passwd", "del"):
+    for c in ("passwd", "del", "disable", "enable"):
         sub.add_parser(c).add_argument("name")
     r = sub.add_parser("role")
     r.add_argument("name")
@@ -98,7 +103,7 @@ def main():
     if args.cmd == "list":
         for n, u in sorted(users.items()):
             role = u.get("role", "readonly")
-            print("%-20s %s" % (n, LEGACY.get(role, role)))
+            print("%-20s %-12s %s" % (n, LEGACY.get(role, role), "NONAKTIF" if u.get("disabled") else ""))
         if not users:
             print("(belum ada pengguna)")
         return
@@ -114,6 +119,9 @@ def main():
     elif args.cmd == "role":
         need_user(users, name)
         users[name]["role"] = args.role
+    elif args.cmd in ("disable", "enable"):
+        need_user(users, name)
+        users[name]["disabled"] = args.cmd == "disable"
     elif args.cmd == "del":
         need_user(users, name)
         del users[name]

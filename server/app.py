@@ -11,6 +11,7 @@ import secrets
 import sqlite3
 import ssl
 import subprocess
+import tempfile
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -33,12 +34,21 @@ CACHE={"overview_at":0.0,"overview":None}
 CACHE_LOCK=threading.Lock()
 TRIAGE_STATES={"New","In progress","Escalated","Closed","False positive"}
 CASE_STATES={"Open","Investigating","Contained","Resolved","Closed"}
+IOC_DIR=os.environ.get("IOC_DIR","/var/ossec/etc/lists/malicious-ioc")
+IOC_RULES=os.environ.get("IOC_RULES","/var/ossec/ruleset/rules/0999-malicious-ioc-rules.xml")
+IOC_FILES=[("ip","malicious-ip","IP"),("domain","malicious-domains","Domain"),("hash","malware-hashes","Hash")]
+IOC_CACHE={"at":0.0,"data":None}
+IOC_LOCK=threading.Lock()
 SERVICES=["wazuh-manager","wazuh-indexer","wazuh-dashboard","filebeat","caddy","soc-automation-dashboard"]
 
 # ---- Login: akun per orang, sesi cookie di memori ----
 INDEX_HTML=os.environ.get("INDEX_HTML","/opt/soc-automation-dashboard/index.html")
 LOGIN_HTML=os.environ.get("LOGIN_HTML","/opt/soc-automation-dashboard/login.html")
-USERS_FILE=os.environ.get("USERS_FILE","/etc/soc-automation/users.json")
+# Di folder state (boleh ditulis layanan, ReadWritePaths) supaya admin bisa mengelola akun dari dashboard.
+USERS_FILE=os.environ.get("USERS_FILE","/var/lib/soc-automation-dashboard/users.json")
+USERS_LOCK=threading.Lock()
+NAME_RE=re.compile(r"^[a-z0-9._-]{3,32}$")
+MIN_PW=12
 COOKIE_PATH=os.environ.get("COOKIE_PATH","/soc-automation/")
 ALLOWED_ORIGINS={o.strip() for o in os.environ.get("ALLOWED_ORIGINS","wazuh.toyspedia.fun,127.0.0.1:8081").split(",") if o.strip()}
 COOKIE_NAME="soc_session"
@@ -87,6 +97,16 @@ def load_users():
     except Exception as exc:
         logging.warning("Could not read users file: %s",type(exc).__name__)
         return {}
+
+def save_users(users):
+    d=os.path.dirname(USERS_FILE)
+    fd,tmp=tempfile.mkstemp(dir=d,prefix=".users-")
+    with os.fdopen(fd,"w",encoding="utf-8") as f:json.dump(users,f,indent=2,sort_keys=True)
+    os.chmod(tmp,0o600);os.replace(tmp,USERS_FILE)
+
+def revoke_sessions(name):
+    with SESSIONS_LOCK:
+        for k in [k for k,v in SESSIONS.items() if v["user"]==name]:del SESSIONS[k]
 
 def new_session(user,role):
     token=secrets.token_urlsafe(32);now=time.time()
@@ -247,13 +267,56 @@ def health_data():
     except Exception:pass
     return {"generated_at":now_iso(),"services":services,"cluster":cluster,"alerts_15m":eps15,"latest_alert":latest,"agents":agent_rows,"pipeline_warnings":errors}
 
+def load_ioc_lists():
+    """Daftar IOC CDB bawaan Wazuh (key:value per baris). Dibaca ulang tiap 60 detik."""
+    with IOC_LOCK:
+        if IOC_CACHE["data"] is not None and time.monotonic()-IOC_CACHE["at"]<60:return IOC_CACHE["data"]
+        out={}
+        for key,fn,label in IOC_FILES:
+            entry={"file":fn,"label":label,"count":None,"updated":"","entries":{}}
+            try:
+                path=os.path.join(IOC_DIR,fn);st=os.stat(path)
+                with open(path,encoding="utf-8",errors="replace") as f:
+                    for line in f:
+                        line=line.strip()
+                        if not line or line.startswith("#"):continue
+                        k,_,v=line.partition(":")
+                        entry["entries"][k.strip().lower()]=v.strip()
+                entry["count"]=len(entry["entries"]);entry["updated"]=datetime.fromtimestamp(st.st_mtime,timezone.utc).isoformat(timespec="seconds")
+            except Exception as exc:logging.warning("Could not read IOC list %s: %s",fn,type(exc).__name__)
+            out[key]=entry
+        IOC_CACHE["data"]=out;IOC_CACHE["at"]=time.monotonic()
+        return out
+
+def ioc_rule_ids():
+    try:
+        with open(IOC_RULES,encoding="utf-8") as f:ids=re.findall(r'<rule id="(\d+)"',f.read())
+        if ids:return ids
+    except Exception:pass
+    return [str(i) for i in range(99901,99921)]
+
+def ioc_lists_info():
+    lists=[{"key":k,"file":v["file"],"label":v["label"],"count":v["count"],"updated":v["updated"]} for k,v in load_ioc_lists().items()]
+    ids=ioc_rule_ids()
+    flt=[range_filter("timestamp","now-30d"),{"terms":{"rule.id":ids}}]
+    cnt=es_search("wazuh-alerts-*",{"size":10,"track_total_hits":True,"query":bool_filters(flt),"sort":[{"timestamp":{"order":"desc"}}],"_source":["timestamp","agent.name","agent.id","rule.id","rule.level","rule.description","rule.groups","data.srcip","data.url"]})
+    return {"lists":lists,"rules":{"ids":ids,"alerts_30d":int(cnt.get("hits",{}).get("total",{}).get("value",0)),"recent":[source_alert(h) for h in cnt.get("hits",{}).get("hits",[])]}}
+
+def ioc_in_lists(value):
+    v=value.strip().lower();host=urlsplit(v).hostname if "://" in v else v
+    found=[]
+    for key,entry in load_ioc_lists().items():
+        probe=host if key=="domain" else v
+        if probe and probe in entry["entries"]:found.append({"list":entry["label"],"file":entry["file"],"tag":entry["entries"][probe]})
+    return found
+
 def get_ioc(value):
     value=value.strip()[:250]
     if not value:raise ValueError("Masukkan IP, domain, URL, atau hash")
     should=[{"term":{"data.srcip":value}},{"term":{"data.url":value}},{"term":{"data.sha256_after":value}},{"term":{"data.md5_after":value}},{"match_phrase":{"full_log":value}}]
     body={"size":50,"track_total_hits":True,"query":{"bool":{"filter":[range_filter("timestamp","now-30d")],"should":should,"minimum_should_match":1}},"sort":[{"timestamp":{"order":"desc"}}],"_source":["timestamp","agent.name","rule.id","rule.level","rule.description","data.srcip","data.url","data.sha256_after","data.md5_after"]}
     res=es_search("wazuh-alerts-*",body)
-    return {"value":value,"observed":int(res.get("hits",{}).get("total",{}).get("value",0)),"reputation":"Not checked — no external TI provider connected","events":[source_alert(h) for h in res.get("hits",{}).get("hits",[])]}
+    return {"value":value,"observed":int(res.get("hits",{}).get("total",{}).get("value",0)),"reputation":"Not checked — no external TI provider connected","lists":ioc_in_lists(value),"events":[source_alert(h) for h in res.get("hits",{}).get("hits",[])]}
 
 def geo_sources(hours=24):
     """IP sumber alert (GeoIP Wazuh) dikelompokkan per IP: jumlah, level tertinggi, dan koordinat."""
@@ -332,7 +395,45 @@ class Handler(BaseHTTPRequestHandler):
             k,_,v=part.strip().partition("=")
             if k==COOKIE_NAME:return v
         return ""
-    def session(self):return get_session(self.cookie_token())
+    def session(self):
+        s=get_session(self.cookie_token())
+        if not s:return None
+        u=load_users().get(s["user"])
+        role=role_info(u.get("role","readonly")) if isinstance(u,dict) else None
+        if not role or u.get("disabled"):
+            with SESSIONS_LOCK:SESSIONS.pop(self.cookie_token(),None)
+            return None
+        s["role"]=role["id"];s["role_name"]=role["name"];s["permissions"]=sorted(role["permissions"])
+        return s
+    def users_action(self,action,body,sess):
+        name=str(body.get("username","")).strip().lower()[:64]
+        err=None
+        with USERS_LOCK:
+            users=load_users()
+            def admins(skip=None):
+                return [n for n,u in users.items() if n!=skip and isinstance(u,dict) and not u.get("disabled") and (role_info(u.get("role","readonly")) or {}).get("id")=="admin"]
+            if action=="add":
+                role=role_info(str(body.get("role","readonly")));pw=str(body.get("password",""))
+                if not NAME_RE.match(name):err=(400,"Nama pengguna harus 3-32 karakter: huruf kecil, angka, titik, minus, atau garis bawah.")
+                elif name in users:err=(409,"Pengguna sudah ada.")
+                elif not role:err=(400,"Peran tidak dikenal.")
+                elif len(pw)<MIN_PW or len(pw)>256:err=(400,"Kata sandi harus %d sampai 256 karakter."%MIN_PW)
+                else:users[name]={"hash":hash_password(pw),"role":role["id"],"disabled":False,"created_at":now_iso(),"created_by":sess["user"]}
+            elif action in ("delete","disable","enable"):
+                if name not in users:err=(404,"Pengguna tidak ditemukan.")
+                elif name==sess["user"] and action!="enable":err=(400,"Anda tidak bisa menghapus atau menonaktifkan akun sendiri.")
+                elif action!="enable" and name in admins() and not admins(skip=name):err=(400,"Harus tersisa minimal satu administrator aktif.")
+                elif action=="delete":del users[name]
+                else:users[name]["disabled"]=(action=="disable")
+            else:err=(404,"Aksi tidak dikenal.")
+            if not err:
+                try:save_users(users)
+                except Exception as exc:
+                    logging.exception("save users failed: %s",type(exc).__name__);err=(503,"Tidak bisa menyimpan daftar pengguna.")
+        if err:json_response(self,err[0],{"error":err[1]});return
+        if action in ("delete","disable"):revoke_sessions(name)
+        audit("pengguna: "+{"add":"tambah","delete":"hapus","disable":"nonaktifkan","enable":"aktifkan"}[action],name,"",actor=sess["user"])
+        json_response(self,200,{"ok":True})
     def cookie_header(self,token,max_age):
         attrs=[f"{COOKIE_NAME}={token}",f"Path={COOKIE_PATH}","HttpOnly","SameSite=Lax",f"Max-Age={max_age}"]
         if self.headers.get("X-Forwarded-Proto")=="https":attrs.append("Secure")
@@ -355,6 +456,8 @@ class Handler(BaseHTTPRequestHandler):
             note_fail(kip,ku);audit("login gagal",name or "-",ip,actor=name or "anonim");time.sleep(0.4)
             json_response(self,401,{"error":"Nama pengguna atau kata sandi salah."});return
         clear_fails(ku)
+        if u.get("disabled"):
+            audit("login ditolak",name,"akun nonaktif",actor=name);json_response(self,403,{"error":"Akun dinonaktifkan. Hubungi administrator."});return
         role=role_info(u.get("role","readonly"))
         if not role:
             audit("login ditolak",name,"peran tidak dikenal",actor=name);json_response(self,403,{"error":"Peran akun tidak valid. Hubungi administrator."});return
@@ -404,6 +507,10 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self,200,{"generated_at":now_iso(),"hours":hours,"sources":geo_sources(hours)})
             except Exception as exc:logging.exception("geo failed: %s",type(exc).__name__);json_response(self,503,{"error":"Geo query unavailable"})
             return
+        if path=="/api/ioc-lists":
+            try:json_response(self,200,ioc_lists_info())
+            except Exception as exc:logging.exception("ioc lists failed: %s",type(exc).__name__);json_response(self,503,{"error":"IOC list query unavailable"})
+            return
         if path=="/api/ioc":
             try:json_response(self,200,get_ioc(qs.get('value',[''])[0]))
             except ValueError as exc:json_response(self,400,{"error":str(exc)})
@@ -422,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/admin":
             try:
                 with db() as con:logs=[dict(r) for r in con.execute("SELECT at,actor,action,target,details FROM audit ORDER BY id DESC LIMIT 100").fetchall()]
-                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(role_info(u.get("role","readonly")) or {"id":"?","name":"Tidak dikenal"})["id"]} for n,u in sorted(load_users().items()) if isinstance(u,dict)] if can(sess,"users") else []),"rbac":{"permissions":[{"id":i,"name":nm,"active":a} for i,nm,a in PERMISSIONS],"roles":[{"id":r,"name":nm,"grants":g} for r,nm,g in ROLE_DEFS]},"audit":(logs if can(sess,"audit") else [])})
+                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(role_info(u.get("role","readonly")) or {"id":"?","name":"Tidak dikenal"})["id"],"disabled":bool(u.get("disabled")),"created_at":u.get("created_at","")} for n,u in sorted(load_users().items()) if isinstance(u,dict)] if can(sess,"users") else []),"rbac":{"permissions":[{"id":i,"name":nm,"active":a} for i,nm,a in PERMISSIONS],"roles":[{"id":r,"name":nm,"grants":g} for r,nm,g in ROLE_DEFS]},"audit":(logs if can(sess,"audit") else [])})
             except Exception as exc:json_response(self,500,{"error":"Could not load admin information"})
             return
         self.send_error(404)
@@ -440,8 +547,9 @@ class Handler(BaseHTTPRequestHandler):
             if sess:audit("logout",sess["user"],self.client_ip(),actor=sess["user"])
             json_response(self,200,{"ok":True},[("Set-Cookie",self.cookie_header("",0))]);return
         if not sess:json_response(self,401,{"error":"Login diperlukan"});return
-        need="triage" if path=="/api/triage" else "cases" if path.startswith("/api/cases") else None
+        need="triage" if path=="/api/triage" else "cases" if path.startswith("/api/cases") else "users" if path.startswith("/api/users/") else None
         if need and not can(sess,need):json_response(self,403,{"error":"Peran "+sess["role_name"]+" tidak punya izin untuk aksi ini"});return
+        if path.startswith("/api/users/"):self.users_action(path.rsplit("/",1)[-1],body,sess);return
         if path=="/api/triage":
             alert_id=str(body.get('alert_id',''))[:512];status=str(body.get('status','New'));assignee=str(body.get('assignee',''))[:120].strip();note=str(body.get('note',''))[:2000]
             if not alert_id or status not in TRIAGE_STATES:json_response(self,400,{"error":"Alert ID/status invalid"});return

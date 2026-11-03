@@ -613,18 +613,51 @@ body::after {
   <header class="soc-head">
     <h1 class="soc-title">Threat Intelligence</h1>
     <p class="soc-lede" id="ti-lede">Memuat alert dari Wazuh…</p>
-    <p class="live-note" id="ti-status">Belum ada feed intelijen eksternal yang terhubung. Lookup mencari indikator di log dan alert Wazuh sendiri (30 hari), tanpa penilaian reputasi.</p>
+    <p class="live-note" id="ti-status">Sumber IOC adalah daftar bawaan Wazuh (statis, tidak diperbarui otomatis). Belum ada feed eksternal seperti VirusTotal, OTX, atau MISP, jadi tidak ada penilaian reputasi.</p>
   </header>
 
   <div class="soc-grid">
     <section class="soc-card">
       <h2>Lookup IOC</h2>
-      <p class="soc-card-note">Cari IP, URL, atau hash file di alert dan log Wazuh.</p>
+      <p class="soc-card-note">Cek IP, URL, atau hash terhadap daftar IOC Wazuh, dan cari kemunculannya di alert dan log (30 hari).</p>
       <form id="ti-form" class="soc-tools">
         <input id="ti-q" class="soc-search" type="search" placeholder="IP, URL, atau hash…" aria-label="Indikator yang dicek">
         <button class="soc-btn primary" type="submit">Cari</button>
       </form>
       <div class="ti-result" id="ti-result" hidden></div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Daftar IOC Wazuh</h2>
+      <p class="soc-card-note" id="ioc-note">Daftar CDB bawaan Wazuh yang dipakai rule IOC.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Daftar</th>
+            <th>Berkas</th>
+            <th class="soc-num">Entri</th>
+            <th class="soc-num soc-opt">Diperbarui</th>
+          </tr></thead>
+          <tbody id="tb-ioclists"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Alert dari rule IOC</h2>
+      <p class="soc-card-note" id="ioc-alerts-note">Alert yang menyala karena log cocok dengan daftar IOC, 30 hari terakhir.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>Severity</th>
+            <th>Rule</th>
+            <th class="soc-opt">Aset</th>
+            <th class="soc-opt">IP sumber</th>
+          </tr></thead>
+          <tbody id="tb-iocalerts"></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="soc-card">
@@ -830,12 +863,23 @@ body::after {
 
     <section class="soc-card soc-wide">
       <h2>Pengguna</h2>
-      <p class="soc-card-note">Akun yang bisa masuk. Ditambah atau diubah dengan <code>manage_users.py</code> di VPS; daftar ini hanya tampil untuk peran yang punya izin mengelola pengguna.</p>
+      <p class="soc-card-note" id="users-note">Akun yang bisa masuk ke dashboard. Daftar ini hanya tampil untuk peran yang punya izin mengelola pengguna.</p>
+      <form id="user-form" class="soc-tools" hidden>
+        <input id="uf-name" class="soc-search" type="text" placeholder="Nama pengguna" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-label="Nama pengguna baru">
+        <select id="uf-role" class="soc-select" aria-label="Peran"></select>
+        <input id="uf-pw" class="soc-search" type="password" placeholder="Kata sandi (min. 12 karakter)" autocomplete="new-password" required minlength="12" aria-label="Kata sandi">
+        <input id="uf-pw2" class="soc-search" type="password" placeholder="Ulangi kata sandi" autocomplete="new-password" required minlength="12" aria-label="Ulangi kata sandi">
+        <button class="soc-btn primary" type="submit">Tambah pengguna</button>
+      </form>
+      <p class="soc-card-note" id="us-msg" role="status"></p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
             <th>Nama pengguna</th>
             <th>Peran</th>
+            <th>Status</th>
+            <th class="soc-num soc-opt">Dibuat</th>
+            <th>Aksi</th>
           </tr></thead>
           <tbody id="tb-users"></tbody>
         </table>
@@ -844,7 +888,7 @@ body::after {
 
     <section class="soc-card soc-wide">
       <h2>Role-based access control (RBAC)</h2>
-      <p class="soc-card-note">Izin tiap peran, diterapkan oleh server pada setiap permintaan. Peran akun diatur dengan <code>manage_users.py</code> di VPS.</p>
+      <p class="soc-card-note">Izin tiap peran, diterapkan oleh server pada setiap permintaan. Peran dipilih saat akun dibuat; untuk mengubahnya pakai <code>manage_users.py role</code> di VPS.</p>
       <div class="soc-tablewrap">
         <table class="soc-table soc-rbac">
           <thead id="th-rbac"></thead>
@@ -938,6 +982,7 @@ const DATA = {
   users: [],
   rbac: {permissions: [], roles: []},
   geo: [],
+  ioc: null,
   automation: null,
 };
 
@@ -1022,8 +1067,9 @@ function liveSources(alerts) {
 async function loadLive() {
   let ov;
   try { ov = await getJson('api/overview'); } catch (e) { LIVE.expired = e.status === 401; LIVE.error = e.name === 'AbortError' ? 'waktu habis' : String(e.message || e); return; }
-  const [me, geo, al, hl, ad, cs] = await Promise.all([
+  const [me, ioc, geo, al, hl, ad, cs] = await Promise.all([
     getJson('api/me').catch(() => null),
+    getJson('api/ioc-lists').catch(() => null),
     getJson('api/geo?hours=24').catch(() => null),
     getJson('api/alerts?days=7&limit=500').catch(() => null),
     getJson('api/health').catch(() => null),
@@ -1035,6 +1081,7 @@ async function loadLive() {
   LIVE.at = new Date();
   LIVE.metrics = ov.metrics;
   DATA.geo = (geo && geo.sources) || [];
+  DATA.ioc = ioc;
   DATA.alerts_daily = liveDaily(ov.trend || []);
   DATA.alerts_by_tactic = (ov.mitre || []).map((m) => ({tactic_id: '', tactic: m.name, alerts: m.count}));
   DATA.top_threats = (ov.top_threats || []).map((t) => ({name: t.name, alerts: t.count}));
@@ -1547,9 +1594,35 @@ function iocType(s) {
 }
 
 function drawIntel() {
-  $('ti-lede').innerHTML = LIVE.on
-    ? '<b>' + fmtInt(DATA.top_sources.length) + '</b> IP sumber berbeda muncul di alert terbaru.'
-    : 'Tidak ada data untuk ditampilkan.';
+  const ioc = DATA.ioc;
+  const total = ioc ? ioc.lists.reduce((n, l) => n + (l.count || 0), 0) : 0;
+  $('ti-lede').innerHTML = !LIVE.on
+    ? 'Tidak ada data untuk ditampilkan.'
+    : ioc
+      ? '<b>' + fmtInt(total) + '</b> indikator di daftar IOC Wazuh, <b>' + fmtInt(ioc.rules.alerts_30d) + '</b> alert dari rule IOC dalam 30 hari, dan <b>' + fmtInt(DATA.top_sources.length) + '</b> IP sumber berbeda di alert terbaru.'
+      : 'Daftar IOC Wazuh tidak bisa dibaca. <b>' + fmtInt(DATA.top_sources.length) + '</b> IP sumber berbeda muncul di alert terbaru.';
+  const tl = $('tb-ioclists');
+  tl.replaceChildren();
+  if (ioc) ioc.lists.forEach((l) => {
+    const tr = el('tr', null, null, tl);
+    td(tr, l.label);
+    td(tr, l.file, 'soc-mono soc-opt');
+    td(tr, l.count == null ? '—' : fmtInt(l.count), 'soc-num');
+    td(tr, fmtTime(l.updated), 'soc-num soc-opt');
+  });
+  else emptyRow(tl, 4, 'Daftar IOC tidak bisa dibaca dari server.');
+  if (ioc) $('ioc-note').textContent = 'Daftar CDB bawaan Wazuh di etc/lists/malicious-ioc. Rule ' + ioc.rules.ids[0] + ' sampai ' + ioc.rules.ids[ioc.rules.ids.length - 1] + ' menyalakan alert bila log cocok. Isinya statis: tidak diperbarui otomatis.';
+  const ta = $('tb-iocalerts');
+  ta.replaceChildren();
+  if (ioc) ioc.rules.recent.forEach((r) => {
+    const tr = el('tr', null, null, ta);
+    td(tr, fmtTime(wzIso(r.timestamp)), 'soc-num');
+    sevChip(tr, r.severity);
+    td(tr, r.description + ' (rule ' + r.rule_id + ')');
+    td(tr, r.agent, 'soc-opt soc-mono');
+    td(tr, r.srcip || '—', 'soc-opt soc-mono');
+  });
+  if (!ioc || !ioc.rules.recent.length) emptyRow(ta, 5, ioc ? 'Tidak ada alert dari rule IOC dalam 30 hari terakhir.' : 'Tidak ada data.');
   const tb = $('tb-sources');
   tb.replaceChildren();
   DATA.top_sources.forEach((s) => {
@@ -1576,7 +1649,10 @@ async function lookup(raw) {
     const res = await getJson('api/ioc?value=' + encodeURIComponent(v));
     box.replaceChildren();
     el('p', null, shortIoc(res.value) + (iocType(res.value) ? ' (' + iocType(res.value) + ')' : '') + ' terlihat ' + fmtInt(res.observed) + ' kali di alert dan log Wazuh dalam 30 hari.', box);
-    el('p', 'soc-card-note', 'Belum ada feed intelijen eksternal, jadi tidak ada penilaian reputasi.', box);
+    const hit = res.lists || [];
+    el('p', hit.length ? 'soc-bad' : 'soc-card-note', hit.length
+      ? 'Ada di daftar IOC Wazuh: ' + hit.map((h) => h.list + (h.tag ? ' (' + h.tag + ')' : '') + ' di ' + h.file).join('; ') + '.'
+      : 'Tidak ada di daftar IOC Wazuh. Itu belum berarti aman: daftarnya kecil dan statis, dan belum ada feed reputasi eksternal.', box);
     if (res.events.length) {
       const wrap = el('div', 'soc-tablewrap', null, box);
       const t = el('table', 'soc-table', null, wrap);
@@ -1753,28 +1829,74 @@ function drawSiem() {
 }
 
 // ---- 8. Administration ----
+const canManageUsers = () => !!(LIVE.me && (LIVE.me.permissions || []).includes('users'));
+
+function drawUsers() {
+  const manage = canManageUsers();
+  $('user-form').hidden = !manage;
+  const sel = $('uf-role');
+  if (!sel.options.length) DATA.rbac.roles.forEach((r) => opt(sel, r.id, r.name));
+  const tu = $('tb-users');
+  tu.replaceChildren();
+  DATA.users.forEach((u) => {
+    const self = LIVE.me && LIVE.me.user === u.name;
+    const tr = el('tr', null, null, tu);
+    td(tr, u.name + (self ? ' (Anda)' : ''), 'soc-mono');
+    td(tr, roleName(u.role));
+    statusChip(tr, u.disabled ? 'Nonaktif' : 'Aktif');
+    td(tr, fmtTime(u.created_at), 'soc-num soc-opt');
+    const act = td(tr, null);
+    if (manage && !self) {
+      const tog = el('button', 'soc-btn', u.disabled ? 'Aktifkan' : 'Nonaktifkan', act);
+      tog.type = 'button';
+      tog.addEventListener('click', () => userAction(u.disabled ? 'enable' : 'disable', {username: u.name}));
+      const del = el('button', 'soc-btn', 'Hapus', act);
+      del.type = 'button';
+      del.addEventListener('click', () => {
+        if (confirm('Hapus pengguna ' + u.name + '? Tindakan ini tidak bisa dibatalkan.')) userAction('delete', {username: u.name});
+      });
+    }
+  });
+  if (!DATA.users.length) emptyRow(tu, 5, manage ? 'Belum ada pengguna.' : 'Peran Anda tidak punya izin melihat daftar pengguna.');
+}
+
+async function refreshUsers() {
+  const ad = await getJson('api/admin');
+  DATA.users = ad.users || [];
+  DATA.audit = (ad.audit || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
+  drawUsers();
+  drawAudit();
+}
+
+async function userAction(action, body) {
+  const msg = $('us-msg');
+  msg.textContent = 'Memproses…';
+  try {
+    const res = await fetch('api/users/' + action, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { msg.textContent = res.status === 401 ? 'Sesi berakhir, silakan login lagi.' : (data.error || 'Gagal (kode ' + res.status + ').'); return false; }
+    await refreshUsers();
+    msg.textContent = 'Berhasil.';
+    return true;
+  } catch (e) {
+    msg.textContent = 'Tidak bisa menghubungi server.';
+    return false;
+  }
+}
+
+$('user-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  if ($('uf-pw').value !== $('uf-pw2').value) { $('us-msg').textContent = 'Kata sandi tidak sama.'; return; }
+  const ok = await userAction('add', {username: $('uf-name').value, role: $('uf-role').value, password: $('uf-pw').value});
+  if (ok) { $('uf-name').value = ''; $('uf-pw').value = ''; $('uf-pw2').value = ''; }
+});
+
 const roleName = (id) => (DATA.rbac.roles.find((r) => r.id === id) || {name: id}).name;
 
 function drawAdmin() {
   const ad = DATA.admin;
-  $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca. Masuk lewat akun pribadi; izin tiap akun ditentukan oleh perannya (RBAC).' : 'Tidak ada data untuk ditampilkan.';
-  const tu = $('tb-users');
-  tu.replaceChildren();
-  DATA.users.forEach((u) => {
-    const tr = el('tr', null, null, tu);
-    td(tr, u.name, 'soc-mono');
-    td(tr, roleName(u.role));
-  });
-  if (!DATA.users.length) emptyRow(tu, 2, ad && LIVE.me && !(LIVE.me.permissions || []).includes('users') ? 'Peran Anda tidak punya izin melihat daftar pengguna.' : 'Belum ada pengguna.');
-  const info = $('tb-admin-info');
-  info.replaceChildren();
-  if (ad) {
-    [['Sumber data', ad.source], ['Konfigurasi manager', ad.manager_config], ['Indexer', ad.indexer_url], ['Autentikasi web', ad.web_auth], ['Integrasi eksternal', ad.external_integrations]].forEach(([k, v]) => {
-      const tr = el('tr', null, null, info);
-      td(tr, k);
-      td(tr, v, 'soc-mono');
-    });
-  } else emptyRow(info, 2);
+  $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca. Masuk lewat akun pribadi; izin tiap akun ditentukan oleh perannya (RBAC). Administrator bisa menambah, menghapus, dan menonaktifkan akun di sini.' : 'Tidak ada data untuk ditampilkan.';
+  drawUsers();
 
   const head = $('th-rbac');
   head.replaceChildren();
@@ -1917,7 +2039,7 @@ function ansIntel() {
   return [
     {p: top.length ? 'IP sumber terbanyak di alert terbaru:' : 'Tidak ada IP sumber di alert terbaru.'},
     {ul: top.map((s) => s.ip + ': ' + s.alerts + ' alert, severity tertinggi ' + s.severity)},
-    {p: 'Belum ada feed intelijen eksternal, jadi saya hanya bisa menunjukkan kemunculan indikator di data Wazuh.'},
+    {p: DATA.ioc ? 'Daftar IOC Wazuh berisi ' + fmtInt(DATA.ioc.lists.reduce((n, l) => n + (l.count || 0), 0)) + ' indikator; ' + fmtInt(DATA.ioc.rules.alerts_30d) + ' alert dari rule IOC dalam 30 hari. Belum ada feed eksternal.' : 'Belum ada feed intelijen eksternal.'},
     {go: [{view: 'intel'}]},
   ];
 }
@@ -1942,7 +2064,7 @@ function ansAutomation() {
 
 function ansAdmin() {
   return [
-    {p: 'Masuk memakai akun pribadi (sesi cookie) dengan izin menurut peran (RBAC): Administrator, SOC Manager, Analyst T3/T2/T1, atau Read-only. Dashboard membaca Wazuh dengan akses hanya baca.'},
+    {p: 'Masuk memakai akun pribadi (sesi cookie) dengan izin menurut peran (RBAC): Administrator, SOC Manager, Analyst T3/T2/T1, atau Read-only. Administrator mengelola akun di halaman Administration. Dashboard membaca Wazuh dengan akses hanya baca.'},
     {go: [{view: 'admin'}]},
   ];
 }
@@ -1975,7 +2097,7 @@ async function ansIoc(v) {
     const res = await getJson('api/ioc?value=' + encodeURIComponent(v));
     return [
       {p: shortIoc(v) + ' (' + iocType(v) + ') terlihat ' + fmtInt(res.observed) + ' kali di alert dan log Wazuh dalam 30 hari.'},
-      {p: 'Belum ada feed intelijen, jadi tidak ada penilaian reputasi.'},
+      {p: (res.lists || []).length ? 'Ada di daftar IOC Wazuh: ' + res.lists.map((h) => h.list + (h.tag ? ' (' + h.tag + ')' : '')).join(', ') + '.' : 'Tidak ada di daftar IOC bawaan Wazuh; belum ada feed reputasi eksternal.'},
       {go: [look]},
     ];
   } catch (e) {
