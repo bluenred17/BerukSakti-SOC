@@ -711,6 +711,22 @@ body::after {
       <p class="soc-card-note" id="tl-note"></p>
       <ol class="timeline" id="tl-list"></ol>
     </section>
+
+    <section class="soc-card soc-wide" id="audit-card" hidden>
+      <h2>Audit log</h2>
+      <p class="soc-card-note">Login, logout, dan perubahan triage, kasus, atau pengguna beserta pelakunya; waktu dalam WIB (UTC+7).</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>Pengguna</th>
+            <th>Aksi</th>
+            <th class="soc-opt">Target</th>
+          </tr></thead>
+          <tbody id="tb-audit"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </section>
 
@@ -912,21 +928,6 @@ body::after {
       </div>
     </section>
 
-    <section class="soc-card soc-wide">
-      <h2>Audit log</h2>
-      <p class="soc-card-note">Login, logout, dan perubahan triage atau kasus beserta pelakunya; waktu dalam WIB (UTC+7).</p>
-      <div class="soc-tablewrap">
-        <table class="soc-table">
-          <thead><tr>
-            <th class="soc-num">Waktu</th>
-            <th>Pengguna</th>
-            <th>Aksi</th>
-            <th class="soc-opt">Target</th>
-          </tr></thead>
-          <tbody id="tb-audit"></tbody>
-        </table>
-      </div>
-    </section>
   </div>
 </section>
 </main>
@@ -1064,16 +1065,20 @@ function liveSources(alerts) {
   return [...map.values()].sort((a, b) => b.alerts - a.alerts).slice(0, 15);
 }
 
+const mapAudit = (rows) => (rows || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
+
 async function loadLive() {
   let ov;
   try { ov = await getJson('api/overview'); } catch (e) { LIVE.expired = e.status === 401; LIVE.error = e.name === 'AbortError' ? 'waktu habis' : String(e.message || e); return; }
-  const [me, ioc, geo, al, hl, ad, cs] = await Promise.all([
-    getJson('api/me').catch(() => null),
+  const me = await getJson('api/me').catch(() => null);
+  const perms = (me && me.permissions) || [];
+  const [ioc, geo, al, hl, ad, au, cs] = await Promise.all([
     getJson('api/ioc-lists').catch(() => null),
     getJson('api/geo?hours=24').catch(() => null),
     getJson('api/alerts?days=7&limit=500').catch(() => null),
     getJson('api/health').catch(() => null),
-    getJson('api/admin').catch(() => null),
+    perms.includes('users') ? getJson('api/admin').catch(() => null) : null,
+    perms.includes('audit') ? getJson('api/audit').catch(() => null) : null,
     getJson('api/cases').catch(() => null),
   ]);
   LIVE.on = true;
@@ -1110,8 +1115,8 @@ async function loadLive() {
     DATA.admin = ad;
     DATA.users = ad.users || [];
     DATA.rbac = ad.rbac || DATA.rbac;
-    DATA.audit = (ad.audit || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
   }
+  if (au) DATA.audit = mapAudit(au.audit);
   if (cs) DATA.cases = cs.cases || [];
 }
 await loadLive();
@@ -1735,6 +1740,7 @@ function drawAutomation() {
 
 // ---- Audit trail (dari api/admin) ----
 function drawAudit() {
+  $('audit-card').hidden = !(LIVE.me && (LIVE.me.permissions || []).includes('audit'));
   const tb = $('tb-audit');
   tb.replaceChildren();
   [...DATA.audit].sort((a, b) => b.time.localeCompare(a.time)).forEach((r) => {
@@ -1861,9 +1867,9 @@ function drawUsers() {
 }
 
 async function refreshUsers() {
-  const ad = await getJson('api/admin');
+  const [ad, au] = await Promise.all([getJson('api/admin'), getJson('api/audit').catch(() => null)]);
   DATA.users = ad.users || [];
-  DATA.audit = (ad.audit || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
+  if (au) DATA.audit = mapAudit(au.audit);
   drawUsers();
   drawAudit();
 }
@@ -1940,7 +1946,7 @@ window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer
 
 function showView(want) {
   const h = typeof want === 'string' ? want : location.hash.slice(1);
-  const v = VIEWS.includes(h) ? h : 'overview';
+  const v = VIEWS.includes(h) && (h !== 'admin' || canManageUsers()) ? h : 'overview';
   VIEWS.forEach((k) => { $('view-' + k).hidden = k !== v; });
   document.querySelectorAll('.side-link').forEach((a) => {
     if (a.dataset.view === v) a.setAttribute('aria-current', 'page');
@@ -2063,6 +2069,7 @@ function ansAutomation() {
 }
 
 function ansAdmin() {
+  if (!canManageUsers()) return [{p: 'Halaman Administration hanya untuk administrator.'}];
   return [
     {p: 'Masuk memakai akun pribadi (sesi cookie) dengan izin menurut peran (RBAC): Administrator, SOC Manager, Analyst T3/T2/T1, atau Read-only. Administrator mengelola akun di halaman Administration. Dashboard membaca Wazuh dengan akses hanya baca.'},
     {go: [{view: 'admin'}]},
@@ -2262,6 +2269,8 @@ function viewNote(view, kind, html) {
   if (LIVE.on) viewNote('siem', 'live', 'Metrik CPU, heap, dan disk per node belum tersedia dari API. EPS dihitung dari alert 15 menit terakhir.');
 }
 
+$('view-admin').hidden = true;
+document.querySelector('.side-link[data-view="admin"]').style.display = canManageUsers() ? '' : 'none';
 if (LIVE.me) {
   $('su-name').textContent = LIVE.me.user;
   $('su-role').textContent = LIVE.me.role_name || LIVE.me.role;

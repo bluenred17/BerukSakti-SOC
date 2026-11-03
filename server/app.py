@@ -527,10 +527,17 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:logging.exception("health failed: %s",type(exc).__name__);json_response(self,503,{"error":"Health query unavailable"})
             return
         if path=="/api/admin":
+            if not can(sess,"users"):json_response(self,403,{"error":"Halaman Administration hanya untuk administrator"});return
+            try:
+                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(role_info(u.get("role","readonly")) or {"id":"?","name":"Tidak dikenal"})["id"],"disabled":bool(u.get("disabled")),"created_at":u.get("created_at","")} for n,u in sorted(load_users().items()) if isinstance(u,dict)] if can(sess,"users") else []),"rbac":{"permissions":[{"id":i,"name":nm,"active":a} for i,nm,a in PERMISSIONS],"roles":[{"id":r,"name":nm,"grants":g} for r,nm,g in ROLE_DEFS]}})
+            except Exception as exc:json_response(self,500,{"error":"Could not load admin information"})
+            return
+        if path=="/api/audit":
+            if not can(sess,"audit"):json_response(self,403,{"error":"Peran Anda tidak boleh melihat audit log"});return
             try:
                 with db() as con:logs=[dict(r) for r in con.execute("SELECT at,actor,action,target,details FROM audit ORDER BY id DESC LIMIT 100").fetchall()]
-                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(role_info(u.get("role","readonly")) or {"id":"?","name":"Tidak dikenal"})["id"],"disabled":bool(u.get("disabled")),"created_at":u.get("created_at","")} for n,u in sorted(load_users().items()) if isinstance(u,dict)] if can(sess,"users") else []),"rbac":{"permissions":[{"id":i,"name":nm,"active":a} for i,nm,a in PERMISSIONS],"roles":[{"id":r,"name":nm,"grants":g} for r,nm,g in ROLE_DEFS]},"audit":(logs if can(sess,"audit") else [])})
-            except Exception as exc:json_response(self,500,{"error":"Could not load admin information"})
+                json_response(self,200,{"audit":logs})
+            except Exception as exc:json_response(self,500,{"error":"Could not load audit log"})
             return
         self.send_error(404)
     def do_POST(self):
