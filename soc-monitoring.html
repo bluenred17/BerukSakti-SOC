@@ -144,6 +144,14 @@ body::after {
 .live-note.live { border-left-color: var(--ok); }
 .live-note.sample { border-left-color: var(--warn); }
 .live-note.warn { border-left-color: var(--bad); }
+.live-note a { color: var(--accent); }
+.side-user { display: flex; align-items: center; gap: 8px; margin: 0 4px 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 12px; }
+.side-user[hidden] { display: none; }
+.side-user span { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.side-user b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-user small { color: var(--muted); }
+.side-user button { font: inherit; font-size: 12px; padding: 4px 10px; color: var(--fg); background: none; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.side-user button:hover { border-color: var(--muted); }
 .live-note:empty { display: none; }
 .soc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr)); gap: 12px; }
 .soc-tile, .soc-card { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); box-shadow: inset 0 1px 0 rgba(140, 200, 255, .06); }
@@ -379,6 +387,7 @@ body::after {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
     Administration
   </a>
+  <div class="side-user" id="side-user" hidden><span><b id="su-name">—</b><small id="su-role"></small></span><button type="button" id="su-out">Keluar</button></div>
   <p class="side-note">Terhubung ke Wazuh di VPS (hanya baca). Dashboard hanya menampilkan data dari Wazuh; panel yang belum punya sumber datanya dibiarkan kosong.</p>
 </nav>
 
@@ -809,10 +818,24 @@ body::after {
   <div class="soc-grid">
     <section class="soc-card soc-wide">
       <h2>Koneksi dan akses</h2>
-      <p class="soc-card-note">Dari konfigurasi dashboard di VPS. Pengguna dan peran dikelola di Caddy (basic auth), bukan di halaman ini.</p>
+      <p class="soc-card-note">Dari konfigurasi dashboard di VPS.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <tbody id="tb-admin-info"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Pengguna</h2>
+      <p class="soc-card-note">Akun yang bisa masuk. Ditambah atau diubah oleh administrator dengan <code>manage_users.py</code> di VPS; hanya administrator yang melihat daftar ini.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Nama pengguna</th>
+            <th>Peran</th>
+          </tr></thead>
+          <tbody id="tb-users"></tbody>
         </table>
       </div>
     </section>
@@ -834,7 +857,7 @@ body::after {
 
     <section class="soc-card soc-wide">
       <h2>Audit log</h2>
-      <p class="soc-card-note">Perubahan yang dicatat dashboard (triage dan kasus); waktu dalam UTC.</p>
+      <p class="soc-card-note">Login, logout, dan perubahan triage atau kasus beserta pelakunya; waktu dalam UTC.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -899,18 +922,20 @@ const DATA = {
   audit: [],
   cases: [],
   admin: null,
+  users: [],
   automation: null,
 };
 
 // ---- Wazuh ----
 // Halaman dilayani dari VPS yang punya api/*. Semua panggilan GET, hanya baca.
-const LIVE = {on: false, at: null, error: '', metrics: {candidate_alerts_24h: 0, critical_alerts_24h: 0, active_agents_1h: 0}, alertTotal: 0, alertShown: 0};
+const LIVE = {on: false, at: null, error: '', expired: false, me: null, metrics: {candidate_alerts_24h: 0, critical_alerts_24h: 0, active_agents_1h: 0}, alertTotal: 0, alertShown: 0};
 
 async function getJson(path, ms = 8000) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms);
   try {
     const res = await fetch(path, {signal: ctl.signal, headers: {Accept: 'application/json'}});
+    if (res.status === 401) throw Object.assign(new Error('Sesi berakhir, silakan login lagi'), {status: 401});
     if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) throw new Error(path + ' → ' + res.status);
     return await res.json();
   } finally { clearTimeout(timer); }
@@ -979,14 +1004,16 @@ function liveSources(alerts) {
 
 async function loadLive() {
   let ov;
-  try { ov = await getJson('api/overview'); } catch (e) { LIVE.error = e.name === 'AbortError' ? 'waktu habis' : String(e.message || e); return; }
-  const [al, hl, ad, cs] = await Promise.all([
+  try { ov = await getJson('api/overview'); } catch (e) { LIVE.expired = e.status === 401; LIVE.error = e.name === 'AbortError' ? 'waktu habis' : String(e.message || e); return; }
+  const [me, al, hl, ad, cs] = await Promise.all([
+    getJson('api/me').catch(() => null),
     getJson('api/alerts?days=7&limit=500').catch(() => null),
     getJson('api/health').catch(() => null),
     getJson('api/admin').catch(() => null),
     getJson('api/cases').catch(() => null),
   ]);
   LIVE.on = true;
+  LIVE.me = me;
   LIVE.at = new Date();
   LIVE.metrics = ov.metrics;
   DATA.alerts_daily = liveDaily(ov.trend || []);
@@ -1015,6 +1042,7 @@ async function loadLive() {
   }
   if (ad) {
     DATA.admin = ad;
+    DATA.users = ad.users || [];
     DATA.audit = (ad.audit || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
   }
   if (cs) DATA.cases = cs.cases || [];
@@ -1705,7 +1733,15 @@ function drawSiem() {
 // ---- 8. Administration ----
 function drawAdmin() {
   const ad = DATA.admin;
-  $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca; akses pengguna dikelola di Caddy.' : 'Tidak ada data untuk ditampilkan.';
+  $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca. Masuk lewat akun pribadi; peran: viewer (baca), analyst, admin.' : 'Tidak ada data untuk ditampilkan.';
+  const tu = $('tb-users');
+  tu.replaceChildren();
+  DATA.users.forEach((u) => {
+    const tr = el('tr', null, null, tu);
+    td(tr, u.name, 'soc-mono');
+    td(tr, {admin: 'Administrator', analyst: 'Analis', viewer: 'Hanya baca'}[u.role] || u.role);
+  });
+  if (!DATA.users.length) emptyRow(tu, 2, ad && LIVE.me && LIVE.me.role !== 'admin' ? 'Hanya administrator yang bisa melihat daftar pengguna.' : 'Belum ada pengguna.');
   const info = $('tb-admin-info');
   info.replaceChildren();
   if (ad) {
@@ -1863,7 +1899,7 @@ function ansAutomation() {
 
 function ansAdmin() {
   return [
-    {p: 'Akses dashboard dikelola di Caddy (basic auth), dan dashboard membaca Wazuh dengan akses hanya baca. Pengguna dan peran tidak dikelola di sini.'},
+    {p: 'Masuk memakai akun pribadi (sesi cookie), dan dashboard membaca Wazuh dengan akses hanya baca. Akun dikelola administrator dengan manage_users.py di VPS.'},
     {go: [{view: 'admin'}]},
   ];
 }
@@ -2054,9 +2090,20 @@ function viewNote(view, kind, html) {
   const stamp = LIVE.on ? LIVE.at.toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'}) : '';
   const status = LIVE.on
     ? '<b>Data Wazuh asli</b> per ' + stamp + ' (hanya baca). Muat ulang halaman untuk memperbarui.'
-    : '<b>Tidak bisa terhubung ke Wazuh</b> (' + LIVE.error + '). Dashboard hanya menampilkan data dari Wazuh, jadi semua panel kosong.';
+    : LIVE.expired
+      ? '<b>Sesi berakhir.</b> <a href="">Login lagi</a> untuk memuat data Wazuh.'
+      : '<b>Tidak bisa terhubung ke Wazuh</b> (' + LIVE.error + '). Dashboard hanya menampilkan data dari Wazuh, jadi semua panel kosong.';
   ['ov-status', 'am-status'].forEach((id) => { const p = $(id); p.className = 'live-note ' + (LIVE.on ? 'live' : 'warn'); p.innerHTML = status; });
   if (LIVE.on) viewNote('siem', 'live', 'Metrik CPU, heap, dan disk per node belum tersedia dari API. EPS dihitung dari alert 15 menit terakhir.');
+}
+
+if (LIVE.me) {
+  $('su-name').textContent = LIVE.me.user;
+  $('su-role').textContent = {admin: 'Administrator', analyst: 'Analis', viewer: 'Hanya baca'}[LIVE.me.role] || LIVE.me.role;
+  $('side-user').hidden = false;
+  $('su-out').addEventListener('click', () => {
+    fetch('api/logout', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {}).finally(() => location.reload());
+  });
 }
 
 drawOverview();
