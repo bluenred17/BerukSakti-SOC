@@ -5,6 +5,7 @@
 //
 // EuRepoC (CC BY-NC 4.0): raw/eurepoc/eurepoc_global_dataset_1_3.csv  ->  data/eurepoc.js
 // UNSW-NB15 (academic use): raw/unsw-nb15/*.csv                         ->  data/unsw-nb15.js
+// CISA KEV (public domain):  raw/cisa-kev/known_exploited_vulnerabilities.json -> data/cisa-kev.js
 const fs = require('fs');
 const path = require('path');
 const {readCsv} = require('./lib/csv');
@@ -236,7 +237,68 @@ async function buildUnsw() {
   });
 }
 
+// ---- CISA KEV (U.S. government work, public) ----
+// Vendors in the KEV catalog that match products in the dashboard's integration list
+const KEV_STACK = ['Microsoft', 'Palo Alto Networks', 'Elastic', 'CrowdStrike', 'Atlassian', 'Slack'];
+
+function buildKev() {
+  const file = path.join(RAW, 'cisa-kev', 'known_exploited_vulnerabilities.json');
+  if (!fs.existsSync(file)) { console.log('skip CISA KEV: ' + file + ' not found'); return; }
+  const kev = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const list = [...kev.vulnerabilities].sort((a, b) => b.dateAdded.localeCompare(a.dateAdded) || b.cveID.localeCompare(a.cveID));
+  const released = kev.dateReleased.slice(0, 10);
+  const daysBefore = (n) => new Date(Date.parse(released + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+  const since30 = daysBefore(30);
+  const since90 = daysBefore(90);
+  const pick = (v) => ({
+    cve: v.cveID,
+    vendor: v.vendorProject,
+    product: v.product,
+    name: v.vulnerabilityName,
+    added: v.dateAdded,
+    due: v.dueDate,
+    ransomware: v.knownRansomwareCampaignUse === 'Known',
+    description: v.shortDescription.length > 240 ? v.shortDescription.slice(0, 237) + '…' : v.shortDescription,
+    cwes: v.cwes || [],
+  });
+  const count = (key) => {
+    const m = new Map();
+    list.forEach((v) => (Array.isArray(v[key]) ? v[key] : [v[key]]).forEach((k) => m.set(k, (m.get(k) || 0) + 1)));
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const years = new Map();
+  list.forEach((v) => years.set(v.dateAdded.slice(0, 4), (years.get(v.dateAdded.slice(0, 4)) || 0) + 1));
+  const stack = list.filter((v) => KEV_STACK.includes(v.vendorProject));
+
+  writeData('cisa-kev.js', 'KEV', {
+    source: {
+      name: kev.title,
+      url: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog',
+      license: 'Karya pemerintah AS, domain publik',
+      citation: 'CISA, ' + kev.title + ', versi ' + kev.catalogVersion + '.',
+    },
+    version: kev.catalogVersion,
+    released,
+    totals: {
+      all: list.length,
+      ransomware: list.filter((v) => v.knownRansomwareCampaignUse === 'Known').length,
+      added_30d: list.filter((v) => v.dateAdded > since30).length,
+      added_90d: list.filter((v) => v.dateAdded > since90).length,
+      due_open: list.filter((v) => v.dueDate >= released).length,
+      stack: stack.length,
+      stack_90d: stack.filter((v) => v.dateAdded > since90).length,
+    },
+    stack_vendors: KEV_STACK,
+    by_year: [...years.entries()].sort().map(([year, n]) => ({year: +year, added: n})),
+    top_vendors: count('vendorProject').slice(0, 8).map(([name, n]) => ({name, cves: n})),
+    top_cwes: count('cwes').filter(([k]) => k).slice(0, 6).map(([name, n]) => ({name, cves: n})),
+    recent: list.slice(0, 30).map(pick),
+    stack_recent: stack.slice(0, 15).map(pick),
+  });
+}
+
 (async () => {
   buildEurepoc();
+  buildKev();
   await buildUnsw();
 })();

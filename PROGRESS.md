@@ -1,6 +1,6 @@
 # PROGRESS — BerukSakti
 
-Rangkuman status proyek per 3 November 2026, sampai penambahan data publik UNSW-NB15 (trafik IDS) dan EuRepoC (lanskap ancaman global).
+Rangkuman status proyek per 3 November 2026, sampai penerapan ide dari AiSOC (feed CISA KEV, Investigation Ledger, tampilan kosong yang jujur) di atas data publik UNSW-NB15 dan EuRepoC.
 
 - Repo: https://github.com/bluenred17/BerukSakti-SOC (branch `master`)
 - Website: https://beruksakti-soc.vercel.app
@@ -62,12 +62,14 @@ D:\Project\aibuilder\
 ├── .gitignore             # Mengecualikan raw/ dan .claude/launch.json
 ├── data/
 │   ├── eurepoc.js         # Ringkasan EuRepoC (hasil build, ±30 KB)
-│   └── unsw-nb15.js       # Ringkasan UNSW-NB15 (hasil build, ±15 KB)
+│   ├── unsw-nb15.js       # Ringkasan UNSW-NB15 (hasil build, ±15 KB)
+│   └── cisa-kev.js        # Ringkasan CISA KEV (hasil build, ±21 KB)
 ├── scripts/
 │   ├── build-data.js      # Mengolah raw/ menjadi data/
 │   └── lib/csv.js         # Pembaca CSV sederhana
 └── raw/                   # Dataset mentah, TIDAK masuk Git
     ├── eurepoc/           # eurepoc_global_dataset_1_3.csv, eurepoc_codebook_1_2.pdf
+    ├── cisa-kev/          # known_exploited_vulnerabilities.json (±1,8 MB, dari cisa.gov)
     └── unsw-nb15/         # UNSW-NB15_1.csv (±161 MB), NUSW-NB15_features.csv (diunduh pengguna)
 ```
 
@@ -86,6 +88,7 @@ Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
 | `PROGRESS.md` | Rangkuman progres ini | — |
 | `multi-agent-orchestration-report.md` | Rancangan SOC Automation: pipeline Elastic → LLM FP Classifier, skema JSON, aturan keputusan, roadmap 5 fase (dibuat pengguna, belum di-commit) | ±130 baris |
 | `scripts/build-data.js` | Mengolah dataset publik di `raw/` menjadi ringkasan di `data/` (EuRepoC dan UNSW-NB15; file UNSW 161 MB dibaca baris per baris, ±3 detik) | ±270 baris |
+| `data/cisa-kev.js` | Ringkasan CISA KEV versi 2026.10.30: total, 30/90 hari, ransomware, tenggat berjalan, vendor & CWE teratas, 30 KEV terbaru, 15 KEV untuk vendor di daftar integrasi | ±21 KB |
 | `data/unsw-nb15.js` | Ringkasan UNSW-NB15_1: total flow, kategori serangan + severity, timeline per 10 menit, penyerang/sasaran/layanan teratas, 60 kelompok alert | ±15 KB |
 | `scripts/lib/csv.js` | Pembaca CSV (kutip, baris baru di dalam kutip) | ±40 baris |
 | `data/eurepoc.js` | Ringkasan EuRepoC: total, per tahun, negara, pelaku, sektor, MITRE, 40 insiden terbaru, 23 insiden Indonesia | ±30 KB |
@@ -138,6 +141,9 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 - [x] **3. AI Investigation** (mengikuti laporan orkestrasi): data FP Classifier memakai skema JSON laporan (`verdict`, `confidence`, `reasoning`, `evidence`, `recommended_action`, `tuning_suggestion`); **aturan keputusan** (label FP hanya bila confidence ≥ 0,9, ada bukti, dan aset non-kritikal; selain itu eskalasi); **fail-safe** (output tidak valid atau tanpa bukti selalu dieskalasi); 5 KPI (diduga FP, dieskalasi, kesesuaian dengan analis, miss rate, golden set); roadmap 5 fase dengan fase berjalan "Mode bayangan"; daftar skor risiko dengan kolom ID, nama, bar, dan angka yang sejajar di semua baris; kartu per alert/insiden berisi alasan, bukti berupa field log, korelasi log, rekomendasi, usulan tuning, dan output JSON. Diuji: 7 investigasi menghasilkan 2 label FP dan 5 eskalasi (1 karena fail-safe pada ALR-90411 yang tanpa bukti).
 - [x] **4. Threat Intelligence**: lookup IOC dengan deteksi tipe (IPv4, domain, MD5/SHA-1/SHA-256), hasil reputasi dan enrichment (skor, negara, ASN, tag, insiden terkait), tabel feed, tabel IOC yang bisa diklik. Diuji: IOC dikenal, IP tidak dikenal, dan format salah.
 - [x] **Trafik IDS (data nyata UNSW-NB15)**: di SOC Overview, bagian "Serangan jaringan terdeteksi IDS" dengan 4 KPI (700.001 flow, 22.215 flow serangan = 3,2%, 2.871 alert setelah dedup, 4 IP penyerang ke 10 host), grafik flow serangan per 10 menit ditumpuk menurut severity (tooltip per kategori), tabel 9 kategori serangan dengan severity, dan tabel penyerang/sasaran/layanan. Di Alert Management, tabel "Alert IDS dari trafik nyata": 60 kelompok alert (kategori + sumber + tujuan + layanan) dengan filter severity, jumlah flow, dan waktu pertama/terakhir. Asisten SOC bisa menjawab "serangan jaringan / IDS". Diuji lewat server lokal (desktop dan HP, tanpa error console).
+- [x] **Feed CISA KEV (data nyata, ide dari AiSOC)** di Threat Intelligence: 5 KPI (1.766 KEV, 36 baru dalam 30 hari, 361 dipakai ransomware, 11 tenggat masih berjalan, 10 KEV vendor stack kita dalam 90 hari), daftar KEV (vendor di daftar integrasi atau 30 terbaru) dengan tooltip ringkasan, vendor & CWE teratas, atribusi sumber. Asisten SOC menjawab "kerentanan/KEV" dan detail CVE tertentu. Diuji lewat server lokal.
+- [x] **Investigation Ledger (ide dari AiSOC)** di setiap kartu AI Investigation: langkah berurutan (konteks dimuat → kueri log per event → penyaring prompt → FP Classifier dengan bukti yang dikutip → aturan keputusan), bukti diberi label `[B1]`, `[B2]`, … agar verdict bisa ditelusuri. Diuji: 7 ledger (5–8 langkah), ALR-90411 berakhir dengan langkah fail-safe merah.
+- [x] **Tampilan kosong yang jujur (ide dari AiSOC)**: bila `data/*.js` tidak ada, bagian KEV, lanskap global, trafik IDS, dan alert IDS diganti kotak penjelasan cara membuat datanya, tanpa angka contoh; Asisten juga mengaku datanya belum dimuat. Diuji dengan membuka file lewat pratinjau `data:` (data publik tidak termuat).
 - [x] **Lanskap ancaman global (data nyata EuRepoC)** di Threat Intelligence: 5 KPI (3.414 insiden 2000–2024, 700 pada 2024, 1.014 terkait aktor negara, 502 ransomware dengan 98 memakai zero-day, 23 menyasar Indonesia), grafik insiden per tahun dengan tooltip jenis insiden, negara sasaran, asal pelaku dan kategori pelaku, sektor sasaran, teknik MITRE initial access/impact, daftar insiden (40 terbaru global atau 23 insiden Indonesia), dan atribusi sumber + lisensi. Bagian ini tersembunyi otomatis kalau `data/eurepoc.js` tidak ada. Asisten SOC bisa menjawab "lanskap ancaman global" dan "serangan ke Indonesia". Diuji lewat server lokal (desktop dan HP, tanpa error console).
 - [x] **5. Incident Management**: tabel kasus dengan SLA (lewat SLA merah), timeline investigasi per kasus (klik baris), tabel insiden yang bisa dicari dan diurutkan. Diuji: klik kasus mengganti timeline.
 - [x] **6. Automation Center**: tombol Setujui/Tolak aksi, **antrean persetujuan tuning rule** dari FP Classifier (exception/ubah kondisi, masa berlaku, dasar usulan; exception dengan wildcard ditandai "cakupan luas"), playbook dengan toggle aktif, riwayat eksekusi. Diuji: menyetujui APR-311 menurunkan badge dan mengubah status eksekusi menjadi Running; menyetujui TUN-042 menurunkan badge 6 → 5 dan tercatat di audit log.
@@ -204,6 +210,7 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 14. **Asisten SOC dibuat simulasi dulu** (dipilih pengguna): tanpa API key dan biaya, aman selama dashboard publik. Semua jawaban lewat satu fungsi `askAssistant(text)` yang mengembalikan blok `{p}`, `{ul}`, `{go}`, sehingga backend AI nanti cukup mengembalikan format yang sama. Status buka/tutup panel diingat per browser di `localStorage`.
 15. **Data publik diolah offline, bukan dimuat mentah**: dataset mentah disimpan di `raw/` (di luar Git), diringkas oleh `scripts/build-data.js` menjadi `data/*.js` (`window.EUREPOC`, `window.UNSW`) yang kecil. Dimuat dengan `<script src>` (bukan `fetch`) supaya tetap jalan saat file dibuka langsung. Setiap data publik wajib menampilkan sumber dan lisensinya, dan dibedakan jelas dari data SOC contoh. Bagian yang datanya tidak ada akan tersembunyi otomatis.
 16. **Waktu UNSW-NB15 tidak digeser** (berbeda dari rencana awal): serangan di file pertama hanya berlangsung ±2 jam pada 22 Januari 2015, jadi ditampilkan dengan waktu aslinya per 10 menit agar tidak menyesatkan. Alert UNSW dikelompokkan seperti SIEM (kategori + sumber + tujuan + layanan, mengikuti prinsip dedup di laporan orkestrasi); severity per kategori adalah pemetaan kita sendiri (Backdoor/Shellcode/Worm = Critical, Exploit/DoS = High, Recon/Fuzzer/Analysis = Medium, Generic = Low).
+17. **Mengambil ide dari AiSOC (github.com/beenuar/AiSOC), bukan memasang AiSOC** (dipilih pengguna): dashboard tetap statis. Yang diambil: feed CISA KEV (tanpa API key), Investigation Ledger dengan kutipan bukti, dan tampilan kosong yang jujur. AiSOC tetap opsi backend di masa depan (self-host Docker, ±8 GB RAM, konektor Elastic). "Stack kita" untuk KEV sementara dicocokkan dari nama vendor di daftar integrasi, bukan inventaris aset.
 
 ---
 

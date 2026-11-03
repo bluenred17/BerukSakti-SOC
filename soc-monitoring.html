@@ -153,6 +153,19 @@ body::after {
 .soc-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .soc-wide { grid-column: 1 / -1; }
 .soc-grid[hidden] { display: none; }
+/* Honest empty state: shown instead of a section whose real data is missing, never filled with sample numbers */
+.soc-empty { display: grid; gap: 4px; padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 13px; }
+.soc-empty[hidden] { display: none; }
+.soc-empty b { color: var(--fg); font-weight: 600; }
+.soc-empty code, .soc-card-note code { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+/* AI Investigation: investigation ledger */
+.ledger { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; font-size: 12px; counter-reset: step; }
+.ledger li { display: grid; grid-template-columns: 1.6em 4.6em minmax(0, 1fr); gap: 8px; align-items: start; counter-increment: step; }
+.ledger li::before { content: counter(step); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.ledger-kind { justify-self: start; padding: 0 6px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; line-height: 1.5; }
+.ledger-body { display: grid; gap: 1px; }
+.ledger-body code { font-family: var(--mono); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.cite { font-family: var(--mono); font-size: 11px; color: var(--accent); }
 .soc-card h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .soc-card-note { margin: 0; color: var(--muted); font-size: 12px; }
 .soc-chart { position: relative; min-height: 260px; }
@@ -363,7 +376,7 @@ body::after {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
     Administration
   </a>
-  <p class="side-note">Data SOC adalah contoh untuk ilustrasi, per 2 November 2026, bukan data SIEM asli. Bagian berlabel UNSW-NB15 (trafik IDS) dan EuRepoC (lanskap ancaman global) memakai data publik untuk riset non-komersial.</p>
+  <p class="side-note">Data SOC adalah contoh untuk ilustrasi, per 2 November 2026, bukan data SIEM asli. Bagian berlabel UNSW-NB15 (trafik IDS), CISA KEV, dan EuRepoC (lanskap ancaman global) memakai data publik untuk riset non-komersial.</p>
 </nav>
 
 <main class="soc">
@@ -547,6 +560,10 @@ body::after {
       </table>
     </section>
   </div>
+  <div class="soc-empty" id="ids-missing" hidden>
+    <b>Data trafik IDS (UNSW-NB15) belum tersedia.</b>
+    <span>Taruh <code>UNSW-NB15_1.csv</code> dan file features di <code>raw/unsw-nb15/</code> lalu jalankan <code>node scripts/build-data.js</code>. Tidak ada angka contoh yang ditampilkan di sini.</span>
+  </div>
 </section>
 
 <!-- 2. Alert Management -->
@@ -657,6 +674,10 @@ body::after {
       <p class="soc-card-note" id="ids-source"></p>
     </section>
   </div>
+  <div class="soc-empty" id="ids-alerts-missing" hidden>
+    <b>Alert IDS dari trafik nyata belum tersedia.</b>
+    <span>Data UNSW-NB15 belum dibuat; jalankan <code>node scripts/build-data.js</code> setelah file mentahnya ada.</span>
+  </div>
 </section>
 
 <!-- 3. AI Investigation -->
@@ -766,6 +787,83 @@ body::after {
     </section>
   </div>
 
+  <div class="soc-grid" id="kev-section">
+    <section class="soc-card soc-wide">
+      <h2>Kerentanan yang sedang dieksploitasi (CISA KEV)</h2>
+      <p class="soc-card-note" id="kev-note">Katalog resmi CISA berisi kerentanan yang terbukti dieksploitasi di dunia nyata. Prioritaskan penambalan untuk yang ada di sistem kita.</p>
+      <div class="soc-tiles">
+        <div class="soc-tile">
+          <span class="soc-tile-label">Total di katalog</span>
+          <span class="soc-tile-value" id="kev-all">—</span>
+          <span class="soc-tile-sub" id="kev-version">—</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Baru, 30 hari</span>
+          <span class="soc-tile-value" id="kev-30">—</span>
+          <span class="soc-tile-sub"><b id="kev-90">—</b> dalam 90 hari</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Dipakai ransomware</span>
+          <span class="soc-tile-value" id="kev-ransom">—</span>
+          <span class="soc-tile-sub">kampanye ransomware yang diketahui</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Tenggat masih berjalan</span>
+          <span class="soc-tile-value" id="kev-due">—</span>
+          <span class="soc-tile-sub">batas penambalan dari CISA</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Vendor di stack kita, 90 hari</span>
+          <span class="soc-tile-value" id="kev-stack">—</span>
+          <span class="soc-tile-sub"><b id="kev-stack-all">—</b> sepanjang katalog</span>
+        </div>
+      </div>
+      <div class="soc-tools">
+        <select id="kev-filter" class="soc-select" aria-label="Pilih daftar KEV">
+          <option value="stack">Vendor yang ada di daftar integrasi kita</option>
+          <option value="recent">30 KEV terbaru (semua vendor)</option>
+        </select>
+      </div>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Ditambahkan</th>
+            <th>CVE</th>
+            <th>Vendor / produk</th>
+            <th class="soc-opt">Kerentanan</th>
+            <th>Ransomware</th>
+            <th class="soc-num">Tenggat</th>
+          </tr></thead>
+          <tbody id="tb-kev"></tbody>
+        </table>
+      </div>
+      <p class="soc-card-note" id="kev-stack-note"></p>
+    </section>
+
+    <section class="soc-card">
+      <h2>Vendor terbanyak di KEV</h2>
+      <p class="soc-card-note">Jumlah CVE per vendor di seluruh katalog.</p>
+      <table class="soc-table">
+        <thead><tr><th>Vendor</th><th class="soc-num">CVE</th></tr></thead>
+        <tbody id="tb-kev-vendors"></tbody>
+      </table>
+    </section>
+
+    <section class="soc-card">
+      <h2>Jenis kelemahan (CWE) terbanyak</h2>
+      <p class="soc-card-note">Satu CVE bisa punya lebih dari satu CWE.</p>
+      <table class="soc-table">
+        <thead><tr><th>CWE</th><th class="soc-num">CVE</th></tr></thead>
+        <tbody id="tb-kev-cwes"></tbody>
+      </table>
+      <p class="soc-card-note" id="kev-source"></p>
+    </section>
+  </div>
+  <div class="soc-empty" id="kev-missing" hidden>
+    <b>Data CISA KEV belum tersedia.</b>
+    <span>Unduh katalog ke <code>raw/cisa-kev/</code> lalu jalankan <code>node scripts/build-data.js</code>. Tidak ada angka contoh yang ditampilkan di sini.</span>
+  </div>
+
   <div class="soc-grid" id="global-section">
     <section class="soc-card soc-wide">
       <h2>Lanskap ancaman global</h2>
@@ -869,7 +967,10 @@ body::after {
       <p class="soc-card-note" id="gl-source"></p>
     </section>
   </div>
-  <p class="soc-card-note" id="gl-missing" hidden>Data lanskap ancaman global belum tersedia. Jalankan <code>node scripts/build-data.js</code> untuk membuat data/eurepoc.js.</p>
+  <div class="soc-empty" id="gl-missing" hidden>
+    <b>Data lanskap ancaman global (EuRepoC) belum tersedia.</b>
+    <span>Unduh dataset ke <code>raw/eurepoc/</code> lalu jalankan <code>node scripts/build-data.js</code>. Tidak ada angka contoh yang ditampilkan di sini.</span>
+  </div>
 </section>
 
 <!-- 5. Incident Management -->
@@ -1246,6 +1347,7 @@ body::after {
 <!-- Summaries of public datasets, generated by scripts/build-data.js; the page still works without them -->
 <script src="data/eurepoc.js"></script>
 <script src="data/unsw-nb15.js"></script>
+<script src="data/cisa-kev.js"></script>
 <script>
 // ---- Data contoh (ganti dengan data SIEM Anda) ----
 const DATA = {
@@ -2121,6 +2223,8 @@ function drawIdsAlerts() {
 function drawIds() {
   $('ids-section').hidden = !IDS;
   $('ids-alerts-section').hidden = !IDS;
+  $('ids-missing').hidden = !!IDS;
+  $('ids-alerts-missing').hidden = !!IDS;
   if (!IDS) return;
   const t = IDS.totals;
   $('ids-flows').textContent = fmtInt(t.flows);
@@ -2269,6 +2373,32 @@ function aiSource(id) {
   return al ? {title: al.rule, severity: al.severity} : {title: id, severity: ''};
 }
 
+// Investigation Ledger (idea from AiSOC): every step the pipeline took, in order, so a verdict can be
+// traced back to its evidence. Steps are derived from the investigation data, as in the simulated pipeline.
+function ledgerSteps(r, d) {
+  const p = DATA.ai_pipeline;
+  const src = aiSource(r.id);
+  const steps = [{kind: 'data', tone: 'muted', text: 'Konteks dimuat: ' + r.id + ', ' + src.title + (src.severity ? ' (' + src.severity + ')' : ''), code: 'aset kritikal: ' + (r.asset_critical ? 'ya' : 'tidak')}];
+  r.correlated.forEach((e) => steps.push({
+    kind: 'tool', tone: 'info',
+    text: 'Kueri log ' + e.src + ' pukul ' + e.t + ': ' + e.ev,
+    code: e.src === 'TI' ? 'ti.lookup(indikator)' : e.src === 'CMDB' ? 'cmdb.lookup(aset)' : 'siem.search(sumber="' + e.src + '", sekitar=' + e.t + ')',
+  }));
+  steps.push({
+    kind: 'guard', tone: 'warn',
+    text: r.correlated.length + ' event dikirim sebagai blok data terpisah dari instruksi; log mentah dan nilai mirip rahasia disaring sebelum ke LLM.',
+    code: 'guard.redact → lolos',
+  });
+  steps.push({
+    kind: 'LLM', tone: 'info',
+    text: 'FP Classifier ' + p.prompt_version + ' (temperature ' + p.temperature + '): ' + VERDICT_LABEL[r.verdict] + ', keyakinan ' + fmtPct(r.confidence) + ', ' +
+      (r.evidence.length ? 'mengutip ' + r.evidence.map((_, i) => 'B' + (i + 1)).join(', ') : 'tidak mengutip bukti apa pun') + '.',
+    code: 'skema JSON: ' + (VERDICT_LABEL[r.verdict] && ACTION_LABEL[r.recommended_action] ? 'valid' : 'tidak valid'),
+  });
+  steps.push({kind: 'aturan', tone: d.failsafe ? 'bad' : d.escalate ? 'warn' : 'ok', text: d.action, code: 'tag: ' + d.tag});
+  return steps;
+}
+
 function drawAI() {
   const inv = [...DATA.ai_investigations].sort((a, b) => b.risk - a.risk);
   const p = DATA.ai_pipeline;
@@ -2330,7 +2460,11 @@ function drawAI() {
     el('h3', null, 'Bukti', card);
     if (r.evidence.length) {
       const ul = el('ul', 'ai-evidence', null, card);
-      r.evidence.forEach((f) => el('li', null, f, ul));
+      r.evidence.forEach((f, i) => {
+        const li = el('li', null, null, ul);
+        el('span', 'cite', '[B' + (i + 1) + '] ', li);
+        li.append(f);
+      });
     } else {
       el('p', 'tone-bad', 'Tidak ada bukti yang dikutip dari field log.', card);
     }
@@ -2352,6 +2486,18 @@ function drawAI() {
       el('h3', null, 'Usulan tuning', card);
       el('p', null, r.tuning_suggestion + ' Menunggu persetujuan di Automation Center.', card);
     }
+    const steps = ledgerSteps(r, d);
+    const led = el('details', 'ai-json', null, card);
+    el('summary', null, 'Investigation Ledger (' + steps.length + ' langkah)', led);
+    const ol2 = el('ol', 'ledger', null, led);
+    steps.forEach((s) => {
+      const li = el('li', null, null, ol2);
+      el('span', 'ledger-kind tone-' + s.tone, s.kind, li);
+      const body = el('span', 'ledger-body', null, li);
+      el('span', null, s.text, body);
+      if (s.code) el('code', null, s.code, body);
+    });
+
     const det = el('details', 'ai-json', null, card);
     el('summary', null, 'Output JSON FP Classifier', det);
     el('pre', null, JSON.stringify({
@@ -2461,6 +2607,57 @@ function drawIntel() {
   });
 }
 $('ti-form').addEventListener('submit', (ev) => { ev.preventDefault(); lookup($('ti-q').value); });
+
+// ---- 4a. Known exploited vulnerabilities (CISA KEV, public) ----
+const KEV = window.KEV;
+const fmtDate = (iso) => fmtDay(new Date(iso + 'T00:00:00Z')) + ' ' + iso.slice(0, 4);
+
+function drawKevList() {
+  const list = $('kev-filter').value === 'recent' ? KEV.recent : KEV.stack_recent;
+  const tb = $('tb-kev');
+  tb.replaceChildren();
+  list.forEach((v) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, fmtDate(v.added), 'soc-num');
+    td(tr, v.cve, 'soc-mono');
+    const vp = td(tr, v.vendor + ' ' + v.product);
+    vp.title = v.description;
+    const nm = td(tr, v.name, 'soc-opt');
+    nm.title = v.description;
+    if (v.ransomware) chip(tr, 'Diketahui', 'tone-bad');
+    else td(tr, 'Tidak diketahui', 'tone-muted');
+    const open = v.due >= KEV.released;
+    td(tr, fmtDate(v.due), 'soc-num' + (open ? ' soc-warn' : ''));
+  });
+}
+
+function drawKev() {
+  $('kev-section').hidden = !KEV;
+  $('kev-missing').hidden = !!KEV;
+  if (!KEV) return;
+  const t = KEV.totals;
+  $('kev-all').textContent = fmtInt(t.all);
+  $('kev-version').textContent = 'versi ' + KEV.version;
+  $('kev-30').textContent = fmtInt(t.added_30d);
+  $('kev-90').textContent = fmtInt(t.added_90d);
+  $('kev-ransom').textContent = fmtInt(t.ransomware);
+  $('kev-due').textContent = fmtInt(t.due_open);
+  $('kev-stack').textContent = fmtInt(t.stack_90d);
+  $('kev-stack-all').textContent = fmtInt(t.stack);
+  $('kev-stack-note').textContent = '"Stack kita" dicocokkan dari nama vendor di daftar integrasi (' + KEV.stack_vendors.join(', ') +
+    '), belum dari inventaris aset sungguhan. Arahkan kursor ke baris untuk ringkasan kerentanannya; tenggat kuning berarti masih berjalan.';
+  glRows('tb-kev-vendors', KEV.top_vendors.map((r) => ({name: r.name, incidents: r.cves})));
+  glRows('tb-kev-cwes', KEV.top_cwes.map((r) => ({name: r.name, incidents: r.cves})));
+  drawKevList();
+  const src = $('kev-source');
+  src.replaceChildren('Sumber: ' + KEV.source.citation + ' ' + KEV.source.license + '. ');
+  const a = el('a', null, KEV.source.url, src);
+  a.href = KEV.source.url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.style.color = 'var(--accent)';
+}
+$('kev-filter').addEventListener('input', drawKevList);
 
 // ---- 4b. Global threat landscape (EuRepoC, public incidents) ----
 const GL = window.EUREPOC;
@@ -3087,6 +3284,32 @@ function ansGlobal(q) {
   ];
 }
 
+function ansKev(q) {
+  if (!KEV) return [{p: 'Data CISA KEV belum dimuat di halaman ini.'}];
+  const t = KEV.totals;
+  const cve = (q.match(/cve-\d{4}-\d{4,}/i) || [])[0];
+  if (cve) {
+    const hit = [...KEV.stack_recent, ...KEV.recent].find((v) => v.cve.toLowerCase() === cve.toLowerCase());
+    if (!hit) return [{p: cve.toUpperCase() + ' tidak ada di ' + (KEV.recent.length + KEV.stack_recent.length) + ' entri KEV yang dimuat dashboard (30 terbaru dan 15 untuk vendor di stack kita). Cek katalog lengkap di situs CISA.'}];
+    return [
+      {p: hit.cve + ': ' + hit.name + '.'},
+      {ul: [
+        'Vendor/produk: ' + hit.vendor + ' ' + hit.product,
+        'Masuk KEV ' + fmtDate(hit.added) + ', tenggat penambalan ' + fmtDate(hit.due) + (hit.due >= KEV.released ? ' (masih berjalan)' : ''),
+        'Dipakai ransomware: ' + (hit.ransomware ? 'ya, diketahui' : 'tidak diketahui'),
+      ]},
+      {p: hit.description},
+      {go: [{view: 'intel', label: 'Lihat di daftar KEV', then: () => $('kev-section').scrollIntoView({block: 'start'})}]},
+    ];
+  }
+  return [
+    {p: 'Katalog CISA KEV versi ' + KEV.version + ' berisi ' + fmtInt(t.all) + ' kerentanan yang terbukti dieksploitasi; ' + t.added_30d + ' ditambahkan dalam 30 hari terakhir.'},
+    {p: t.stack_90d + ' dalam 90 hari terakhir menyangkut vendor di daftar integrasi kita:'},
+    {ul: KEV.stack_recent.slice(0, 5).map((v) => v.cve + ' ' + v.vendor + ' ' + v.product + ' (masuk ' + v.added + (v.ransomware ? ', dipakai ransomware' : '') + ')')},
+    {go: [{view: 'intel', label: 'Buka daftar KEV', then: () => $('kev-section').scrollIntoView({block: 'start'})}]},
+  ];
+}
+
 function ansIds() {
   if (!IDS) return [{p: 'Data trafik IDS (UNSW-NB15) belum dimuat di halaman ini.'}];
   const t = IDS.totals;
@@ -3249,6 +3472,7 @@ function answer(raw) {
   if (has(q, 'ringkas', 'rangkum', 'summary', 'kondisi', 'status soc', 'hari ini', 'prioritas')) return ansSummary();
   if (has(q, 'insiden', 'incident', 'kritis', 'critical', 'kasus', 'case', 'sla')) return ansIncidents();
   if (has(q, 'siem', 'cluster', 'agen', 'agent', 'pipeline', 'eps', 'ingest', 'kesehatan', 'health', 'sumber log')) return ansSiem();
+  if (has(q, 'kev', 'cve-', 'kerentanan', 'vulnerab', 'patch', 'tambal')) return ansKev(q);
   if (has(q, 'global', 'dunia', 'eurepoc', 'indonesia', 'lanskap')) return ansGlobal(q);
   if (has(q, 'unsw', 'ids', 'trafik', 'serangan jaringan', 'penyerang')) return ansIds();
   if (has(q, 'ioc', 'intel', 'reputasi', 'feed', 'ancaman', 'threat')) return ansIntel();
@@ -3376,6 +3600,7 @@ alertStats();
 drawAlerts();
 drawAI();
 drawIntel();
+drawKev();
 drawGlobal();
 drawCases();
 drawTimeline();
