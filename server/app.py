@@ -255,6 +255,19 @@ def get_ioc(value):
     res=es_search("wazuh-alerts-*",body)
     return {"value":value,"observed":int(res.get("hits",{}).get("total",{}).get("value",0)),"reputation":"Not checked — no external TI provider connected","events":[source_alert(h) for h in res.get("hits",{}).get("hits",[])]}
 
+def geo_sources(hours=24):
+    """IP sumber alert (GeoIP Wazuh) dikelompokkan per IP: jumlah, level tertinggi, dan koordinat."""
+    body={"size":0,"query":bool_filters([range_filter("timestamp",f"now-{hours}h"),{"exists":{"field":"GeoLocation.location"}},{"exists":{"field":"data.srcip"}}]),"aggs":{"ips":{"terms":{"field":"data.srcip","size":60},"aggs":{"max_level":{"max":{"field":"rule.level"}},"last":{"max":{"field":"timestamp"}},"geo":{"top_hits":{"size":1,"_source":["GeoLocation"]}}}}}}
+    res=es_search("wazuh-alerts-*",body);out=[]
+    for b in res.get("aggregations",{}).get("ips",{}).get("buckets",[]):
+        hits=b.get("geo",{}).get("hits",{}).get("hits",[])
+        g=hits[0].get("_source",{}).get("GeoLocation",{}) if hits else {}
+        loc=g.get("location",{})
+        if "lat" not in loc or "lon" not in loc:continue
+        lvl=int(b.get("max_level",{}).get("value") or 0)
+        out.append({"ip":b["key"],"count":int(b["doc_count"]),"level":lvl,"severity":severity_name(lvl),"city":g.get("city_name",""),"country":g.get("country_name",""),"lat":loc["lat"],"lon":loc["lon"],"last":b.get("last",{}).get("value_as_string","")})
+    return out
+
 def investigate(alert_id):
     req=es_search("wazuh-alerts-*",{"size":1,"query":{"ids":{"values":[alert_id]}},"_source":True})
     hits=req.get("hits",{}).get("hits",[])
@@ -384,6 +397,12 @@ class Handler(BaseHTTPRequestHandler):
             try:json_response(self,200,investigate(qs.get('alert_id',[''])[0]))
             except KeyError as exc:json_response(self,404,{"error":str(exc)})
             except Exception as exc:logging.exception("investigation failed: %s",type(exc).__name__);json_response(self,503,{"error":"Investigation query unavailable"})
+            return
+        if path=="/api/geo":
+            try:
+                hours=max(1,min(int(qs.get('hours',['24'])[0]),168))
+                json_response(self,200,{"generated_at":now_iso(),"hours":hours,"sources":geo_sources(hours)})
+            except Exception as exc:logging.exception("geo failed: %s",type(exc).__name__);json_response(self,503,{"error":"Geo query unavailable"})
             return
         if path=="/api/ioc":
             try:json_response(self,200,get_ioc(qs.get('value',[''])[0]))

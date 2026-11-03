@@ -348,6 +348,7 @@ body::after {
 </style>
 </head>
 <body>
+<canvas id="bg-map" aria-hidden="true"></canvas>
 <div class="app">
 <nav class="side" aria-label="Modul dashboard">
   <div class="side-brand">
@@ -936,11 +937,14 @@ const DATA = {
   admin: null,
   users: [],
   rbac: {permissions: [], roles: []},
+  geo: [],
   automation: null,
 };
 
 // ---- Wazuh ----
 // Halaman dilayani dari VPS yang punya api/*. Semua panggilan GET, hanya baca.
+// Lokasi server yang dituju busur di peta latar (Jakarta). Ubah bila server ada di tempat lain.
+const MAP_TARGET = [106.8, -6.2];
 const LIVE = {on: false, at: null, error: '', expired: false, me: null, metrics: {candidate_alerts_24h: 0, critical_alerts_24h: 0, active_agents_1h: 0}, alertTotal: 0, alertShown: 0};
 
 async function getJson(path, ms = 8000) {
@@ -1018,8 +1022,9 @@ function liveSources(alerts) {
 async function loadLive() {
   let ov;
   try { ov = await getJson('api/overview'); } catch (e) { LIVE.expired = e.status === 401; LIVE.error = e.name === 'AbortError' ? 'waktu habis' : String(e.message || e); return; }
-  const [me, al, hl, ad, cs] = await Promise.all([
+  const [me, geo, al, hl, ad, cs] = await Promise.all([
     getJson('api/me').catch(() => null),
+    getJson('api/geo?hours=24').catch(() => null),
     getJson('api/alerts?days=7&limit=500').catch(() => null),
     getJson('api/health').catch(() => null),
     getJson('api/admin').catch(() => null),
@@ -1029,6 +1034,7 @@ async function loadLive() {
   LIVE.me = me;
   LIVE.at = new Date();
   LIVE.metrics = ov.metrics;
+  DATA.geo = (geo && geo.sources) || [];
   DATA.alerts_daily = liveDaily(ov.trend || []);
   DATA.alerts_by_tactic = (ov.mitre || []).map((m) => ({tactic_id: '', tactic: m.name, alerts: m.count}));
   DATA.top_threats = (ov.top_threats || []).map((t) => ({name: t.name, alerts: t.count}));
@@ -2126,7 +2132,7 @@ function viewNote(view, kind, html) {
 {
   const stamp = LIVE.on ? fmtClock(LIVE.at) + ' WIB' : '';
   const status = LIVE.on
-    ? '<b>Data Wazuh asli</b> per ' + stamp + ' (hanya baca). Muat ulang halaman untuk memperbarui.'
+    ? '<b>Data Wazuh asli</b> per ' + stamp + ' (hanya baca). Muat ulang halaman untuk memperbarui.' + (DATA.geo.length ? ' Peta latar: ' + fmtInt(DATA.geo.length) + ' IP sumber dari ' + new Set(DATA.geo.map((g) => g.country)).size + ' negara dalam 24 jam terakhir (GeoIP Wazuh); busur menuju server.' : ' Peta latar: tidak ada IP sumber berlokasi dalam 24 jam terakhir.')
     : LIVE.expired
       ? '<b>Sesi berakhir.</b> <a href="">Login lagi</a> untuk memuat data Wazuh.'
       : '<b>Tidak bisa terhubung ke Wazuh</b> (' + LIVE.error + '). Dashboard hanya menampilkan data dari Wazuh, jadi semua panel kosong.';
@@ -2155,6 +2161,219 @@ drawAdmin();
 drawAudit();
 showView();
 initChat();
+
+// ---- Latar: peta titik dunia + busur dari IP sumber alert Wazuh (GeoIP) ----
+(function threatMap() {
+  const cv = $('bg-map');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const rgb = getComputedStyle(document.documentElement).getPropertyValue('--node').trim();
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Rough land outlines as [lon, lat]; shown as dots, so the low detail is hidden.
+  const LAND = [
+    [[-168,66],[-162,70],[-140,70],[-125,70],[-95,72],[-80,73],[-65,62],[-55,52],[-66,45],[-70,42],[-76,35],[-81,31],[-80,25],[-82,28],[-84,30],[-90,29],[-97,26],[-97,22],[-92,18],[-87,21],[-88,16],[-83,10],[-79,8],[-80,7],[-85,11],[-92,14],[-105,20],[-110,24],[-112,30],[-117,32],[-122,37],[-124,42],[-124,48],[-130,54],[-140,59],[-150,60],[-158,57],[-165,60]],
+    [[-55,60],[-44,60],[-20,70],[-18,77],[-30,83],[-60,82],[-70,77],[-55,70]],
+    [[-80,8],[-72,12],[-62,11],[-52,5],[-35,-5],[-39,-15],[-48,-26],[-58,-35],[-65,-42],[-68,-52],[-74,-52],[-73,-40],[-71,-30],[-70,-18],[-76,-14],[-81,-5],[-80,0],[-78,7]],
+    [[-10,36],[-9,43],[-2,44],[-5,48],[2,51],[8,54],[8,57],[5,62],[12,66],[20,70],[30,71],[40,68],[45,66],[60,68],[60,55],[50,47],[40,45],[36,41],[28,41],[26,38],[22,37],[20,40],[16,38],[12,44],[8,44],[3,43],[0,39],[-5,36]],
+    [[26,41],[36,36],[35,32],[43,13],[52,16],[57,23],[60,25],[67,25],[72,20],[77,8],[80,14],[80,16],[87,22],[92,22],[94,17],[98,10],[100,4],[104,1],[104,10],[109,12],[108,20],[117,23],[122,30],[121,38],[118,39],[122,40],[126,38],[129,35],[129,42],[135,44],[141,52],[140,58],[150,59],[160,61],[163,68],[180,68],[180,72],[140,73],[110,77],[100,78],[80,73],[68,73],[60,68],[45,66],[40,60],[40,45]],
+    [[-17,21],[-16,14],[-12,7],[-8,4],[0,5],[9,4],[10,-3],[13,-10],[12,-17],[15,-27],[18,-34],[25,-34],[33,-27],[35,-20],[40,-15],[40,-5],[44,2],[51,11],[44,11],[38,18],[32,30],[20,32],[10,37],[-6,36],[-10,30]],
+    [[114,-22],[122,-18],[130,-12],[137,-12],[142,-11],[146,-19],[153,-26],[151,-34],[146,-39],[138,-35],[132,-32],[124,-34],[115,-34]],
+    [[95,5],[98,4],[104,-1],[106,-6],[104,-5],[100,-2],[96,2]],
+    [[105,-6],[110,-6.5],[114,-7],[114.5,-8.5],[110,-8],[105,-7]],
+    [[115,-8],[120,-8.5],[124,-8.5],[124,-10],[118,-9]],
+    [[109,1],[112,3],[117,7],[119,1],[116,-4],[110,-3]],
+    [[119,-5],[120,1],[125,1],[121,-1],[123,-5]],
+    [[131,-1],[141,-3],[150,-10],[141,-9],[137,-5]],
+    [[120,18],[122,18],[126,7],[122,7]],
+    [[130,31],[141,36],[142,42],[145,44],[140,41],[135,34]],
+    [[-6,50],[1,51],[0,54],[-3,59],[-6,57],[-5,54]],
+    [[44,-25],[47,-25],[50,-15],[49,-12],[43,-17]],
+    [[172,-35],[178,-38],[174,-41],[167,-46],[172,-41]],
+    [[-24,64],[-13,65],[-16,66],[-22,66]],
+  ];
+  const BOXES = LAND.map((poly) => {
+    const xs = poly.map((p) => p[0]);
+    const ys = poly.map((p) => p[1]);
+    return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  });
+
+  // Sumber = IP asli dari alert Wazuh (GeoIP), diberi bobot jumlah alert dan warna menurut severity tertinggi.
+  const SEV_RGB = {Critical: '239, 91, 91', High: '232, 166, 64', Medium: '34, 211, 238', Low: '141, 156, 172'};
+  const TARGETS = [{p: MAP_TARGET, w: 1}];
+  const sources = () => DATA.geo.map((g) => ({p: [g.lon, g.lat], c: SEV_RGB[g.severity] || SEV_RGB.Low, w: g.count}));
+  const pick = (list) => {
+    let r = Math.random() * list.reduce((s, o) => s + o.w, 0);
+    return list.find((o) => (r -= o.w) < 0) || list[0];
+  };
+
+  let W = 0;
+  let H = 0;
+  let scale = 1;
+  let ox = 0;
+  let oy = 0;
+  let mapLayer = null;
+  let attacks = [];
+  let spawnAt = 0;
+
+  const proj = ([lon, lat]) => [ox + (lon + 180) * scale, oy + (80 - lat) * scale];
+
+  function isLand(lon, lat) {
+    for (let k = 0; k < LAND.length; k++) {
+      const b = BOXES[k];
+      if (lon < b[0] || lon > b[1] || lat < b[2] || lat > b[3]) continue;
+      const poly = LAND[k];
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i];
+        const [xj, yj] = poly[j];
+        if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  }
+
+  function setup() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    if (!W || !H) return;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Fit the map (lat 80 to -58) to the width, but keep it at least 80% of the height.
+    scale = Math.max(W / 360, (H * 0.8) / 138);
+    ox = (W - 360 * scale) / 2;
+    oy = (H - 138 * scale) / 2;
+
+    mapLayer = document.createElement('canvas');
+    mapLayer.width = W * dpr;
+    mapLayer.height = H * dpr;
+    const m = mapLayer.getContext('2d');
+    m.setTransform(dpr, 0, 0, dpr, 0, 0);
+    m.fillStyle = `rgba(${rgb}, .22)`;
+    const gap = W < 700 ? 6 : 8;
+    for (let y = Math.max(0, oy); y < Math.min(H, oy + 138 * scale); y += gap) {
+      for (let x = 0; x < W; x += gap) {
+        const lon = (x - ox) / scale - 180;
+        const lat = 80 - (y - oy) / scale;
+        if (lon >= -180 && lon <= 180 && isLand(lon, lat)) {
+          m.beginPath();
+          m.arc(x, y, 1.2, 0, Math.PI * 2);
+          m.fill();
+        }
+      }
+    }
+  }
+
+  function spawn(now) {
+    const list = sources();
+    if (!list.length) return;
+    const src = pick(list);
+    const s = proj(src.p);
+    const t = proj(pick(TARGETS).p);
+    const dist = Math.hypot(t[0] - s[0], t[1] - s[1]);
+    attacks.push({
+      s, t,
+      c: [(s[0] + t[0]) / 2, Math.min(s[1], t[1]) - dist * 0.3],
+      col: src.c,
+      born: now,
+      dur: 1600 + Math.random() * 1400,
+    });
+  }
+
+  const bez = (a, u) => {
+    const v = 1 - u;
+    return [v * v * a.s[0] + 2 * v * u * a.c[0] + u * u * a.t[0], v * v * a.s[1] + 2 * v * u * a.c[1] + u * u * a.t[1]];
+  };
+
+  function drawArc(a, from, to, alpha) {
+    const steps = 24;
+    for (let i = 0; i < steps; i++) {
+      const u0 = from + ((to - from) * i) / steps;
+      const u1 = from + ((to - from) * (i + 1)) / steps;
+      const p0 = bez(a, u0);
+      const p1 = bez(a, u1);
+      ctx.strokeStyle = `rgba(${a.col}, ${alpha * ((i + 1) / steps)})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(p0[0], p0[1]);
+      ctx.lineTo(p1[0], p1[1]);
+      ctx.stroke();
+    }
+  }
+
+  function dot(x, y, r, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function ring(x, y, r, color, width) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function frame(now) {
+    // The window can report 0×0 while it is still opening; wait until it has a size.
+    if (!W || !H) {
+      setup();
+      if (!W || !H) { requestAnimationFrame(frame); return; }
+    }
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(mapLayer, 0, 0, W, H);
+    ctx.lineCap = 'round';
+
+    if (still) {
+      attacks = [];
+      for (let i = 0; i < 12; i++) spawn(0);
+      attacks.forEach((a) => drawArc(a, 0, 1, 0.4));
+    } else {
+      if (now > spawnAt && attacks.length < 16) {
+        spawn(now);
+        spawnAt = now + 250 + Math.random() * 450;
+      }
+      attacks = attacks.filter((a) => (now - a.born) / a.dur < 1.6);
+      for (const a of attacks) {
+        const age = (now - a.born) / a.dur;
+        if (age < 1) {
+          drawArc(a, Math.max(0, age - 0.35), age, 0.85);
+          const h = bez(a, age);
+          dot(h[0], h[1], 4, `rgba(${a.col}, .25)`);
+          dot(h[0], h[1], 1.8, `rgba(${a.col}, 1)`);
+          dot(a.s[0], a.s[1], 2, `rgba(${a.col}, ${0.7 * (1 - age)})`);
+        } else {
+          const k = (age - 1) / 0.6;
+          ring(a.t[0], a.t[1], 3 + k * 16, `rgba(${a.col}, ${0.8 * (1 - k)})`, 1.5);
+        }
+      }
+    }
+
+    // Steady pulse on every protected site.
+    const pulse = ((now || 0) % 2000) / 2000;
+    TARGETS.forEach((tg) => {
+      const [x, y] = proj(tg.p);
+      dot(x, y, 2.4, 'rgba(34, 211, 238, .9)');
+      ring(x, y, 4 + pulse * 12, `rgba(34, 211, 238, ${0.5 * (1 - pulse)})`, 1);
+    });
+
+    if (!still) requestAnimationFrame(frame);
+  }
+
+  setup();
+  requestAnimationFrame(frame);
+  window.addEventListener('resize', () => {
+    setup();
+    attacks = [];
+    if (still) requestAnimationFrame(frame);
+  });
+})();
 </script>
 </body>
 </html>
