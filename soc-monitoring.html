@@ -145,6 +145,7 @@ body::after {
 .live-note.sample { border-left-color: var(--warn); }
 .live-note.warn { border-left-color: var(--bad); }
 .live-note a { color: var(--accent); }
+.soc-rbac th.c, .soc-rbac td.c { text-align: center; }
 .side-user { display: flex; align-items: center; gap: 8px; margin: 0 4px 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 12px; }
 .side-user[hidden] { display: none; }
 .side-user span { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
@@ -527,7 +528,7 @@ body::after {
   <div class="soc-grid">
     <section class="soc-card soc-wide">
       <h2>Antrean alert</h2>
-      <p class="soc-card-note">Alert terbaru dari Wazuh Indexer (hanya baca); waktu dalam UTC. Status triage berasal dari catatan lokal dashboard.</p>
+      <p class="soc-card-note">Alert terbaru dari Wazuh Indexer (hanya baca); waktu dalam WIB (UTC+7). Status triage berasal dari catatan lokal dashboard.</p>
       <div class="soc-tools">
         <input id="am-search" class="soc-search" type="search" placeholder="Cari ID, rule, aset…" aria-label="Cari alert">
         <select id="am-sev" class="soc-select" aria-label="Filter severity">
@@ -792,7 +793,7 @@ body::after {
 
     <section class="soc-card">
       <h2>Error pipeline</h2>
-      <p class="soc-card-note">Event yang gagal di-parse atau dikirim, 24 jam terakhir; waktu dalam UTC.</p>
+      <p class="soc-card-note">Event yang gagal di-parse atau dikirim, 24 jam terakhir; waktu dalam WIB (UTC+7).</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -828,7 +829,7 @@ body::after {
 
     <section class="soc-card soc-wide">
       <h2>Pengguna</h2>
-      <p class="soc-card-note">Akun yang bisa masuk. Ditambah atau diubah oleh administrator dengan <code>manage_users.py</code> di VPS; hanya administrator yang melihat daftar ini.</p>
+      <p class="soc-card-note">Akun yang bisa masuk. Ditambah atau diubah dengan <code>manage_users.py</code> di VPS; daftar ini hanya tampil untuk peran yang punya izin mengelola pengguna.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -836,6 +837,17 @@ body::after {
             <th>Peran</th>
           </tr></thead>
           <tbody id="tb-users"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Role-based access control (RBAC)</h2>
+      <p class="soc-card-note">Izin tiap peran, diterapkan oleh server pada setiap permintaan. Peran akun diatur dengan <code>manage_users.py</code> di VPS.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table soc-rbac">
+          <thead id="th-rbac"></thead>
+          <tbody id="tb-rbac"></tbody>
         </table>
       </div>
     </section>
@@ -857,7 +869,7 @@ body::after {
 
     <section class="soc-card soc-wide">
       <h2>Audit log</h2>
-      <p class="soc-card-note">Login, logout, dan perubahan triage atau kasus beserta pelakunya; waktu dalam UTC.</p>
+      <p class="soc-card-note">Login, logout, dan perubahan triage atau kasus beserta pelakunya; waktu dalam WIB (UTC+7).</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -923,6 +935,7 @@ const DATA = {
   cases: [],
   admin: null,
   users: [],
+  rbac: {permissions: [], roles: []},
   automation: null,
 };
 
@@ -950,7 +963,7 @@ const minsSince = (iso) => (iso ? Math.max(0, Math.round((Date.now() - new Date(
 
 function liveDaily(trend) {
   const map = Object.fromEntries(trend.map((r) => [r.date, r]));
-  const end = trend.length ? new Date(trend[trend.length - 1].date + 'T00:00:00Z') : new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  const end = trend.length ? new Date(trend[trend.length - 1].date + 'T00:00:00Z') : new Date(new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10) + 'T00:00:00Z');
   const out = [];
   for (let i = 13; i >= 0; i--) {
     const day = new Date(end.getTime() - i * 86400000).toISOString().slice(0, 10);
@@ -1043,6 +1056,7 @@ async function loadLive() {
   if (ad) {
     DATA.admin = ad;
     DATA.users = ad.users || [];
+    DATA.rbac = ad.rbac || DATA.rbac;
     DATA.audit = (ad.audit || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
   }
   if (cs) DATA.cases = cs.cases || [];
@@ -1058,9 +1072,11 @@ const SVGNS = 'http://www.w3.org/2000/svg';
 
 const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
 const fmtPct = (v, d = 0) => (v * 100).toFixed(d) + '%';
-const fmtDay = (date) => date.toLocaleDateString('id-ID', {day: 'numeric', month: 'short', timeZone: 'UTC'});
-const fmtLong = (date) => date.toLocaleDateString('id-ID', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'});
-const fmtOpened = (date) => fmtDay(date) + ', ' + date.toISOString().slice(11, 16);
+const TZ = 'Asia/Jakarta'; // UTC+7 (WIB), tanpa DST
+const fmtDay = (date) => date.toLocaleDateString('id-ID', {day: 'numeric', month: 'short', timeZone: TZ});
+const fmtClock = (date) => date.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ});
+const fmtLong = (date) => date.toLocaleDateString('id-ID', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: TZ});
+const fmtOpened = (date) => fmtDay(date) + ', ' + fmtClock(date);
 const $ = (id) => document.getElementById(id);
 
 function svgEl(tag, attrs, parent) {
@@ -1610,7 +1626,7 @@ async function drawTimeline() {
   $('tl-note').textContent = 'Memuat…';
   try {
     const c = await getJson('api/cases/' + encodeURIComponent(selCase));
-    $('tl-note').textContent = c.title + '. Pemilik: ' + (c.owner || '—') + '. ' + c.summary + ' Waktu dalam UTC.';
+    $('tl-note').textContent = c.title + '. Pemilik: ' + (c.owner || '—') + '. ' + c.summary + ' Waktu dalam WIB (UTC+7).';
     c.timeline.forEach((e) => {
       const li = el('li', null, null, ol);
       el('span', 'tl-meta', fmtTime(e.at) + ' · ' + e.actor, li);
@@ -1731,17 +1747,19 @@ function drawSiem() {
 }
 
 // ---- 8. Administration ----
+const roleName = (id) => (DATA.rbac.roles.find((r) => r.id === id) || {name: id}).name;
+
 function drawAdmin() {
   const ad = DATA.admin;
-  $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca. Masuk lewat akun pribadi; peran: viewer (baca), analyst, admin.' : 'Tidak ada data untuk ditampilkan.';
+  $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca. Masuk lewat akun pribadi; izin tiap akun ditentukan oleh perannya (RBAC).' : 'Tidak ada data untuk ditampilkan.';
   const tu = $('tb-users');
   tu.replaceChildren();
   DATA.users.forEach((u) => {
     const tr = el('tr', null, null, tu);
     td(tr, u.name, 'soc-mono');
-    td(tr, {admin: 'Administrator', analyst: 'Analis', viewer: 'Hanya baca'}[u.role] || u.role);
+    td(tr, roleName(u.role));
   });
-  if (!DATA.users.length) emptyRow(tu, 2, ad && LIVE.me && LIVE.me.role !== 'admin' ? 'Hanya administrator yang bisa melihat daftar pengguna.' : 'Belum ada pengguna.');
+  if (!DATA.users.length) emptyRow(tu, 2, ad && LIVE.me && !(LIVE.me.permissions || []).includes('users') ? 'Peran Anda tidak punya izin melihat daftar pengguna.' : 'Belum ada pengguna.');
   const info = $('tb-admin-info');
   info.replaceChildren();
   if (ad) {
@@ -1751,6 +1769,25 @@ function drawAdmin() {
       td(tr, v, 'soc-mono');
     });
   } else emptyRow(info, 2);
+
+  const head = $('th-rbac');
+  head.replaceChildren();
+  const hr = el('tr', null, null, head);
+  el('th', null, 'Izin', hr);
+  DATA.rbac.roles.forEach((r) => el('th', 'c', r.name + (LIVE.me && LIVE.me.role === r.id ? ' (Anda)' : ''), hr));
+  const rb = $('tb-rbac');
+  rb.replaceChildren();
+  DATA.rbac.permissions.forEach((p, i) => {
+    const row = el('tr', null, null, rb);
+    const name = td(row, p.name);
+    if (!p.active) el('div', 'soc-card-note', 'belum ada fiturnya di dashboard', name);
+    DATA.rbac.roles.forEach((r) => {
+      const ok = r.grants[i] === '1';
+      const c = td(row, ok ? '✓' : '—', 'c ' + (ok ? 'tone-ok' : 'tone-muted'));
+      c.setAttribute('aria-label', ok ? 'Diizinkan' : 'Tidak diizinkan');
+    });
+  });
+  if (!DATA.rbac.roles.length) emptyRow(rb, 2);
 
   const ti = $('tb-integrations');
   ti.replaceChildren();
@@ -1821,7 +1858,7 @@ function ansSummary() {
   if (!LIVE.on) return NO_DATA;
   const crit = DATA.alerts.filter((a) => a.severity === 'Critical' && !isClosed(a.status));
   return [
-    {p: 'Ringkasan dari Wazuh per ' + LIVE.at.toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'}) + ':'},
+    {p: 'Ringkasan dari Wazuh per ' + fmtClock(LIVE.at) + ' WIB:'},
     {ul: [
       fmtInt(M.candidate_alerts_24h) + ' alert level 10+ dalam 24 jam, ' + fmtInt(M.critical_alerts_24h) + ' di antaranya kritis.',
       'Alert hari ini ' + fmtInt(today.total) + (avgPrior ? ', ' + (vsAvg >= 0 ? 'naik ' : 'turun ') + fmtPct(Math.abs(vsAvg)) + ' dari rata-rata 13 hari sebelumnya' : '') + '.',
@@ -1899,7 +1936,7 @@ function ansAutomation() {
 
 function ansAdmin() {
   return [
-    {p: 'Masuk memakai akun pribadi (sesi cookie), dan dashboard membaca Wazuh dengan akses hanya baca. Akun dikelola administrator dengan manage_users.py di VPS.'},
+    {p: 'Masuk memakai akun pribadi (sesi cookie) dengan izin menurut peran (RBAC): Administrator, SOC Manager, Analyst T3/T2/T1, atau Read-only. Dashboard membaca Wazuh dengan akses hanya baca.'},
     {go: [{view: 'admin'}]},
   ];
 }
@@ -1919,7 +1956,7 @@ function ansId(id) {
     {ul: [
       'Severity ' + a.severity + ' (level ' + a.level + '), status triage ' + a.status,
       'Aset ' + a.asset + ', sumber ' + a.source + (a.srcip ? ', IP sumber ' + a.srcip : ''),
-      'Waktu ' + fmtTime(a.time) + ' UTC',
+      'Waktu ' + fmtTime(a.time) + ' WIB',
     ]},
     {go: [{view: 'ai', label: 'Investigasi alert'}]},
   ];
@@ -2087,7 +2124,7 @@ function viewNote(view, kind, html) {
   head.append(p);
 }
 {
-  const stamp = LIVE.on ? LIVE.at.toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'}) : '';
+  const stamp = LIVE.on ? fmtClock(LIVE.at) + ' WIB' : '';
   const status = LIVE.on
     ? '<b>Data Wazuh asli</b> per ' + stamp + ' (hanya baca). Muat ulang halaman untuk memperbarui.'
     : LIVE.expired
@@ -2099,7 +2136,7 @@ function viewNote(view, kind, html) {
 
 if (LIVE.me) {
   $('su-name').textContent = LIVE.me.user;
-  $('su-role').textContent = {admin: 'Administrator', analyst: 'Analis', viewer: 'Hanya baca'}[LIVE.me.role] || LIVE.me.role;
+  $('su-role').textContent = LIVE.me.role_name || LIVE.me.role;
   $('side-user').hidden = false;
   $('su-out').addEventListener('click', () => {
     fetch('api/logout', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}).catch(() => {}).finally(() => location.reload());

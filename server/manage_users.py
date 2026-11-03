@@ -3,11 +3,17 @@
 
   sudo python3 manage_users.py add budi --role admin      # kata sandi diminta lewat prompt
   sudo python3 manage_users.py passwd budi
-  sudo python3 manage_users.py role budi analyst
+  sudo python3 manage_users.py role budi analyst_t2
   sudo python3 manage_users.py del budi
   sudo python3 manage_users.py list
 
-Peran: viewer (hanya baca), analyst (boleh triage dan kelola kasus), admin (semua, termasuk melihat daftar pengguna).
+Peran (matriks izin lengkap ada di halaman Administration dan di app.py):
+  admin        Administrator: semua izin
+  manager      SOC Manager: semua kecuali kelola integrasi dan pengguna
+  analyst_t3   SOC Analyst T3: triage, kasus, playbook, persetujuan aksi
+  analyst_t2   SOC Analyst T2: triage, kasus, playbook
+  analyst_t1   SOC Analyst T1: triage alert
+  readonly     Read-only: lihat dashboard dan audit log
 Kata sandi tidak pernah diberikan sebagai argumen supaya tidak masuk riwayat shell.
 """
 import argparse
@@ -22,7 +28,8 @@ import tempfile
 
 USERS_FILE = os.environ.get("USERS_FILE", "/etc/soc-automation/users.json")
 SERVICE_GROUP = os.environ.get("SERVICE_GROUP", "socauto")
-ROLES = ("viewer", "analyst", "admin")
+ROLES = ("admin", "manager", "analyst_t3", "analyst_t2", "analyst_t1", "readonly")
+LEGACY = {"viewer": "readonly", "analyst": "analyst_t2"}
 NAME_RE = re.compile(r"^[a-z0-9._-]{3,32}$")
 MIN_LEN = 12
 
@@ -74,7 +81,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("add")
     a.add_argument("name")
-    a.add_argument("--role", choices=ROLES, default="viewer")
+    a.add_argument("--role", choices=ROLES, default="readonly")
     sub.add_parser("list")
     for c in ("passwd", "del"):
         sub.add_parser(c).add_argument("name")
@@ -90,7 +97,8 @@ def main():
 
     if args.cmd == "list":
         for n, u in sorted(users.items()):
-            print("%-20s %s" % (n, u.get("role", "viewer")))
+            role = u.get("role", "readonly")
+            print("%-20s %s" % (n, LEGACY.get(role, role)))
         if not users:
             print("(belum ada pengguna)")
         return

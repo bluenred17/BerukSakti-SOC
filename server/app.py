@@ -42,6 +42,19 @@ USERS_FILE=os.environ.get("USERS_FILE","/etc/soc-automation/users.json")
 COOKIE_PATH=os.environ.get("COOKIE_PATH","/soc-automation/")
 ALLOWED_ORIGINS={o.strip() for o in os.environ.get("ALLOWED_ORIGINS","wazuh.toyspedia.fun,127.0.0.1:8081").split(",") if o.strip()}
 COOKIE_NAME="soc_session"
+# RBAC: urutan izin sama dengan urutan digit pada tiap peran (1 = diizinkan).
+# Kolom ketiga: apakah fitur di balik izin itu sudah ada di dashboard.
+PERMISSIONS=[("view","Lihat dashboard",True),("triage","Triage alert",True),("cases","Kelola insiden & kasus",True),("playbook","Jalankan playbook",False),("approve","Setujui aksi otomatis",False),("integrations","Kelola integrasi",False),("users","Kelola pengguna & peran",True),("audit","Lihat audit log",True)]
+ROLE_DEFS=[("admin","Administrator","11111111"),("manager","SOC Manager","11111001"),("analyst_t3","SOC Analyst T3","11111000"),("analyst_t2","SOC Analyst T2","11110000"),("analyst_t1","SOC Analyst T1","11000000"),("readonly","Read-only","10000001")]
+ROLE_ALIAS={"viewer":"readonly","analyst":"analyst_t2"}
+
+def role_info(role):
+    rid=ROLE_ALIAS.get(role,role)
+    for r,name,grants in ROLE_DEFS:
+        if r==rid:return {"id":rid,"name":name,"permissions":{p[0] for p,g in zip(PERMISSIONS,grants) if g=="1"}}
+    return None
+
+def can(sess,perm):return perm in sess.get("permissions",())
 SESSION_ABS=12*3600
 SESSION_IDLE=2*3600
 MAX_FAILS=5
@@ -79,7 +92,7 @@ def new_session(user,role):
     token=secrets.token_urlsafe(32);now=time.time()
     with SESSIONS_LOCK:
         for k in [k for k,v in SESSIONS.items() if now-v["created"]>SESSION_ABS or now-v["seen"]>SESSION_IDLE]:del SESSIONS[k]
-        SESSIONS[token]={"user":user,"role":role,"created":now,"seen":now}
+        SESSIONS[token]={"user":user,"role":role["id"],"role_name":role["name"],"permissions":sorted(role["permissions"]),"created":now,"seen":now}
     return token
 
 def get_session(token):
@@ -194,7 +207,7 @@ def overview():
     c24=es_search("wazuh-alerts-*",{"size":0,"query":bool_filters([range_filter("timestamp","now-24h"),level_filter(12)])})
     active=es_search("wazuh-monitoring-*",{"size":0,"query":bool_filters([range_filter("timestamp","now-1h"),{"term":{"status":"active"}}]),"aggs":{"agents":{"cardinality":{"field":"name"}}}})
     active_count=int(active.get("aggregations",{}).get("agents",{}).get("value",0))
-    trend_res=es_search("wazuh-alerts-*",{"size":0,"query":bool_filters([range_filter("timestamp","now-14d"),level_filter(3)]),"aggs":{"days":{"date_histogram":{"field":"timestamp","calendar_interval":"day","min_doc_count":0},"aggs":{"levels":{"terms":{"field":"rule.level","size":20}}}}}})
+    trend_res=es_search("wazuh-alerts-*",{"size":0,"query":bool_filters([range_filter("timestamp","now-14d"),level_filter(3)]),"aggs":{"days":{"date_histogram":{"field":"timestamp","calendar_interval":"day","min_doc_count":0,"time_zone":"+07:00"},"aggs":{"levels":{"terms":{"field":"rule.level","size":20}}}}}})
     trend=[]
     for b in trend_res.get("aggregations",{}).get("days",{}).get("buckets",[]):
         row={"date":b.get("key_as_string","")[:10],"critical":0,"high":0,"medium":0,"low":0}
@@ -329,9 +342,12 @@ class Handler(BaseHTTPRequestHandler):
             note_fail(kip,ku);audit("login gagal",name or "-",ip,actor=name or "anonim");time.sleep(0.4)
             json_response(self,401,{"error":"Nama pengguna atau kata sandi salah."});return
         clear_fails(ku)
-        role=u.get("role","viewer");token=new_session(name,role)
+        role=role_info(u.get("role","readonly"))
+        if not role:
+            audit("login ditolak",name,"peran tidak dikenal",actor=name);json_response(self,403,{"error":"Peran akun tidak valid. Hubungi administrator."});return
+        token=new_session(name,role)
         audit("login",name,ip,actor=name)
-        json_response(self,200,{"ok":True,"user":name,"role":role},[("Set-Cookie",self.cookie_header(token,SESSION_ABS))])
+        json_response(self,200,{"ok":True,"user":name,"role":role["id"]},[("Set-Cookie",self.cookie_header(token,SESSION_ABS))])
     def read_body(self):
         n=int(self.headers.get("Content-Length","0"))
         if n<0 or n>20000:raise ValueError("Request body too large")
@@ -343,10 +359,11 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/healthz":json_response(self,200,{"status":"ok"});return
         sess=self.session()
         if path=="/api/me":
-            if sess:json_response(self,200,{"user":sess["user"],"role":sess["role"]})
+            if sess:json_response(self,200,{"user":sess["user"],"role":sess["role"],"role_name":sess["role_name"],"permissions":sess["permissions"]})
             else:json_response(self,401,{"error":"Login diperlukan"})
             return
         if path.startswith("/api/") and not sess:json_response(self,401,{"error":"Login diperlukan"});return
+        if path.startswith("/api/") and not can(sess,"view"):json_response(self,403,{"error":"Peran Anda tidak boleh melihat dashboard"});return
         if path=="/api/overview":
             try:
                 with CACHE_LOCK:
@@ -386,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/admin":
             try:
                 with db() as con:logs=[dict(r) for r in con.execute("SELECT at,actor,action,target,details FROM audit ORDER BY id DESC LIMIT 100").fetchall()]
-                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(u.get("role","viewer") if isinstance(u,dict) else "viewer")} for n,u in sorted(load_users().items())] if sess["role"]=="admin" else []),"audit":logs})
+                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(role_info(u.get("role","readonly")) or {"id":"?","name":"Tidak dikenal"})["id"]} for n,u in sorted(load_users().items()) if isinstance(u,dict)] if can(sess,"users") else []),"rbac":{"permissions":[{"id":i,"name":nm,"active":a} for i,nm,a in PERMISSIONS],"roles":[{"id":r,"name":nm,"grants":g} for r,nm,g in ROLE_DEFS]},"audit":(logs if can(sess,"audit") else [])})
             except Exception as exc:json_response(self,500,{"error":"Could not load admin information"})
             return
         self.send_error(404)
@@ -404,7 +421,8 @@ class Handler(BaseHTTPRequestHandler):
             if sess:audit("logout",sess["user"],self.client_ip(),actor=sess["user"])
             json_response(self,200,{"ok":True},[("Set-Cookie",self.cookie_header("",0))]);return
         if not sess:json_response(self,401,{"error":"Login diperlukan"});return
-        if sess["role"] not in ("analyst","admin"):json_response(self,403,{"error":"Peran Anda hanya boleh membaca"});return
+        need="triage" if path=="/api/triage" else "cases" if path.startswith("/api/cases") else None
+        if need and not can(sess,need):json_response(self,403,{"error":"Peran "+sess["role_name"]+" tidak punya izin untuk aksi ini"});return
         if path=="/api/triage":
             alert_id=str(body.get('alert_id',''))[:512];status=str(body.get('status','New'));assignee=str(body.get('assignee',''))[:120].strip();note=str(body.get('note',''))[:2000]
             if not alert_id or status not in TRIAGE_STATES:json_response(self,400,{"error":"Alert ID/status invalid"});return
