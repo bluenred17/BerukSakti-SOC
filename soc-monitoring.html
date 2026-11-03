@@ -139,6 +139,10 @@ body::after {
 .soc-lede { margin: 0; font-size: 15px; max-width: 72ch; }
 .soc-lede b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .soc-note { margin: 0; color: var(--muted); font-size: 12px; }
+.live-note { margin: 0; padding: 7px 12px; border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--radius); font-size: 12.5px; color: var(--muted); max-width: 72ch; }
+.live-note b { color: var(--fg); font-weight: 600; }
+.live-note.live { border-left-color: var(--ok); }
+.live-note.sample { border-left-color: var(--warn); }
 .soc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr)); gap: 12px; }
 .soc-tile, .soc-card { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); box-shadow: inset 0 1px 0 rgba(140, 200, 255, .06); }
 .soc-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; }
@@ -1348,7 +1352,7 @@ body::after {
 <script src="data/eurepoc.js"></script>
 <script src="data/unsw-nb15.js"></script>
 <script src="data/cisa-kev.js"></script>
-<script>
+<script type="module">
 // ---- Data contoh (ganti dengan data SIEM Anda) ----
 const DATA = {
   alerts_daily: [
@@ -1736,6 +1740,106 @@ const DATA = {
   ],
 };
 
+// ---- Wazuh live ----
+// Dilayani dari VPS (api/* ada), halaman memuat data Wazuh asli. Di tempat lain (Vercel, file lokal)
+// panggilan gagal dan data contoh di atas tetap dipakai. Semua panggilan GET, hanya baca.
+const LIVE = {on: false, at: null, alertTotal: 0, alertShown: 0};
+
+async function getJson(path, ms = 6000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(path, {signal: ctl.signal, headers: {Accept: 'application/json'}});
+    if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) throw new Error(path + ' → ' + res.status);
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
+// Wazuh menulis zona waktu tanpa titik dua (+0800); sebagian browser menolaknya.
+const wzIso = (s) => {
+  const d = new Date(String(s || '').replace(/([+-]\d\d)(\d\d)$/, '$1:$2'));
+  return isNaN(d) ? '' : d.toISOString();
+};
+const minsSince = (iso) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000)) : 9999);
+
+function liveDaily(trend) {
+  const map = Object.fromEntries(trend.map((r) => [r.date, r]));
+  const end = trend.length ? new Date(trend[trend.length - 1].date + 'T00:00:00Z') : new Date();
+  const out = [];
+  for (let i = 13; i >= 0; i--) {
+    const day = new Date(end.getTime() - i * 86400000).toISOString().slice(0, 10);
+    const r = map[day] || {};
+    out.push({day, critical: r.critical || 0, high: r.high || 0, medium: r.medium || 0, low: r.low || 0});
+  }
+  return out;
+}
+
+function liveHealth(hl) {
+  const statusOf = {active: 'Healthy', pending: 'Delayed', never_connected: 'Delayed', disconnected: 'Down'};
+  const cl = hl.cluster || {};
+  const clStatus = {green: 'Healthy', yellow: 'Warning', red: 'Down'}[cl.status] || 'Warning';
+  const nodes = [{node: 'wazuh-indexer', role: 'Cluster ' + (cl.number_of_nodes ?? '?') + ' node, ' + (cl.active_shards ?? '?') + ' shard' + (cl.unassigned_shards ? ', ' + cl.unassigned_shards + ' belum dialokasikan' : ''), cpu: null, heap: null, disk: null, status: clStatus}];
+  Object.entries(hl.services || {}).forEach(([name, st]) => nodes.push({node: name, role: 'Layanan systemd', cpu: null, heap: null, disk: null, status: st === 'active' ? 'Healthy' : 'Down'}));
+
+  const agents = (hl.agents || []).map((a) => ({
+    host: a.name, os: [a.os && a.os.name, a.os && a.os.version].filter(Boolean).join(' ') || '—',
+    version: String(a.version || '').replace(/^Wazuh v/, ''), last_min: minsSince(a.timestamp), status: statusOf[a.status] || 'Delayed',
+  }));
+
+  const lastAlert = minsSince(hl.latest_alert);
+  const logs = [{source: 'Wazuh manager → indexer (alert)', type: 'SIEM', eps: Math.round(((hl.alerts_15m || 0) / 900) * 100) / 100, last_seen_min: lastAlert, status: lastAlert > 60 ? 'Down' : lastAlert > 15 ? 'Delayed' : 'Healthy'}];
+  agents.forEach((a) => logs.push({source: 'Agent ' + a.host, type: 'Wazuh agent', eps: 0, last_seen_min: a.last_min, status: a.status}));
+
+  const groups = new Map();
+  (hl.pipeline_warnings || []).forEach((line) => {
+    const m = line.match(/^(\d{4})\/(\d\d)\/(\d\d) (\d\d:\d\d:\d\d) ([\w.-]+): (?:WARNING|ERROR|CRITICAL)?:?\s*(.*)$/i);
+    if (!m) return;
+    const key = m[5] + '|' + m[6];
+    const g = groups.get(key) || {time: wzIso(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + '+0800'), pipeline: m[5], error: m[6], count: 0};
+    g.count += 1;
+    groups.set(key, g);
+  });
+  return {nodes, agents, logs, pipeline_errors: [...groups.values()]};
+}
+
+async function loadLive() {
+  let ov;
+  try { ov = await getJson('api/overview'); } catch (e) { return; }
+  const [al, hl, ad] = await Promise.all([
+    getJson('api/alerts?days=7&limit=500').catch(() => null),
+    getJson('api/health').catch(() => null),
+    getJson('api/admin').catch(() => null),
+  ]);
+  LIVE.on = true;
+  LIVE.at = new Date();
+  LIVE.metrics = ov.metrics;
+  DATA.alerts_daily = liveDaily(ov.trend || []);
+  DATA.alerts_by_tactic = (ov.mitre || []).map((m) => ({tactic_id: '', tactic: m.name, alerts: m.count}));
+  DATA.top_threats = (ov.top_threats || []).map((t) => ({name: t.name, category: 'Rule Wazuh', alerts: t.count, change: null}));
+  DATA.noisy_rules = (ov.top_rules || []).map((r) => ({rule: r.description + ' (rule ' + r.id + ')', alerts: r.count, fp: null}));
+  DATA.fp_metrics = [];
+  if (al) {
+    const stMap = {'New': 'New', 'In progress': 'In triage', 'Escalated': 'Escalated', 'Closed': 'Closed - TP', 'False positive': 'Closed - FP'};
+    DATA.alerts = al.alerts.map((a) => ({
+      id: a.id, time: wzIso(a.timestamp), rule: a.description,
+      source: (a.groups || []).find((g) => g !== 'syslog') || (a.groups || [])[0] || 'wazuh',
+      severity: a.severity, asset: a.agent, assignee: a.triage.assignee || '', status: stMap[a.triage.status] || 'New',
+    }));
+    LIVE.alertTotal = al.total;
+    LIVE.alertShown = al.alerts.length;
+  }
+  if (hl) {
+    const h = liveHealth(hl);
+    DATA.nodes = h.nodes;
+    DATA.agents = h.agents;
+    DATA.log_sources = h.logs;
+    DATA.pipeline_errors = h.pipeline_errors;
+    DATA.integrations = [{name: 'Wazuh Indexer (hanya baca)', type: 'SIEM', status: h.nodes[0].status === 'Down' ? 'Error: cluster merah' : 'Terhubung', synced_min: 0, enabled: true}];
+  }
+  if (ad) DATA.audit = (ad.audit || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
+}
+await loadLive();
+
 // ---- Helpers ----
 const KEYS = ['critical', 'high', 'medium', 'low'];
 const SEV_LABEL = {critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low'};
@@ -1830,7 +1934,7 @@ const days = DATA.alerts_daily.map((r) => {
 const today = days[days.length - 1];
 const prior = days.slice(0, -1);
 const avgPrior = prior.reduce((s, r) => s + r.total, 0) / prior.length;
-const vsAvg = (today.total - avgPrior) / avgPrior;
+const vsAvg = avgPrior ? (today.total - avgPrior) / avgPrior : 0;
 
 const openInc = DATA.incidents.filter((i) => i.status !== 'Resolved' && i.status !== 'Closed');
 const critOpen = openInc.filter((i) => i.severity === 'Critical').length;
@@ -1860,6 +1964,13 @@ $('t-healthy').textContent = fmtInt(healthy);
 $('t-total').textContent = fmtInt(logs.length);
 $('t-delayed').textContent = fmtInt(delayed);
 $('t-down').textContent = fmtInt(down);
+if (LIVE.on) {
+  // Insiden, MTTD/MTTR dan FP rate belum punya sumber di Wazuh; jangan tampilkan angka contoh di samping data asli.
+  ['lede-crit', 't-open', 't-unassigned', 't-mttd', 't-mttr', 't-fp'].forEach((id) => { $(id).textContent = '—'; });
+  ['t-mttd-d', 't-mttr-d', 't-fp-d'].forEach((id) => { $(id).textContent = ''; $(id).classList.remove('soc-good', 'soc-bad'); });
+  const m = LIVE.metrics;
+  $('view-overview').querySelector('.soc-lede').innerHTML = 'Dalam 24 jam terakhir Wazuh mencatat <b>' + fmtInt(m.candidate_alerts_24h) + '</b> alert level 10 ke atas, <b>' + fmtInt(m.critical_alerts_24h) + '</b> di antaranya kritis (level 12+). Ada <b>' + fmtInt(m.active_agents_1h) + '</b> agen aktif dan <b>' + fmtInt(down) + '</b> sumber log berhenti mengirim.';
+}
 
 // ---- Alert volume chart ----
 function drawVolume() {
@@ -1937,7 +2048,7 @@ function drawTactics() {
   const box = $('chart-tactics');
   const rows = DATA.alerts_by_tactic.map((r) => ({id: r.tactic_id, name: r.tactic, n: r.alerts})).sort((a, b) => b.n - a.n);
   const sum = rows.reduce((s, r) => s + r.n, 0);
-  const max = rows[0].n;
+  const max = rows.length ? rows[0].n : 1;
   const W = Math.max(260, box.clientWidth);
   const rowH = 24;
   const H = rows.length * rowH + 8;
@@ -2108,12 +2219,15 @@ function drawOverview() {
     td(tr, r.name);
     td(tr, r.category, 'soc-opt');
     td(tr, fmtInt(r.alerts), 'soc-num');
-    setDelta(el('b', null, null, td(tr, null, 'soc-num')), r.change);
+    const dl = el('b', null, null, td(tr, null, 'soc-num'));
+    if (r.change == null) dl.textContent = '—';
+    else setDelta(dl, r.change);
   });
 
   // FP reduction metrics; "better" says which direction is an improvement
   const fm = $('tb-fpm');
   fm.replaceChildren();
+  if (!DATA.fp_metrics.length) td(el('tr', null, null, fm), 'Belum ada data: Wazuh tidak menyimpan label false positive.', 'soc-opt').colSpan = 3;
   DATA.fp_metrics.forEach((m) => {
     const tr = el('tr', null, null, fm);
     const name = td(tr, m.label);
@@ -2133,7 +2247,8 @@ function drawOverview() {
     const tr = el('tr', null, null, nr);
     td(tr, r.rule);
     td(tr, fmtInt(r.alerts), 'soc-num');
-    td(tr, fmtPct(r.fp), 'soc-num' + (r.fp >= 0.8 ? ' soc-bad' : r.fp >= 0.5 ? ' soc-warn' : ''));
+    if (r.fp == null) td(tr, '—', 'soc-num tone-muted');
+    else td(tr, fmtPct(r.fp), 'soc-num' + (r.fp >= 0.8 ? ' soc-bad' : r.fp >= 0.5 ? ' soc-warn' : ''));
   });
 }
 
@@ -2321,6 +2436,7 @@ function drawAlerts() {
     opt(who, '', '— Belum ditugaskan —');
     DATA.analysts.forEach((a) => opt(who, a));
     who.value = r.assignee;
+    who.disabled = LIVE.on;
     who.addEventListener('change', () => {
       r.assignee = who.value;
       audit(who.value ? 'Menugaskan alert ke ' + who.value : 'Melepas penugasan alert', r.id);
@@ -2332,6 +2448,7 @@ function drawAlerts() {
     stSel.setAttribute('aria-label', 'Status triage ' + r.id);
     ALERT_STATUSES.forEach((s) => opt(stSel, s));
     stSel.value = r.status;
+    stSel.disabled = LIVE.on;
     stSel.addEventListener('change', () => {
       r.status = stSel.value;
       audit('Mengubah status triage menjadi ' + stSel.value, r.id);
@@ -2780,7 +2897,7 @@ function drawCases() {
   $('im-t-breach').classList.toggle('soc-bad', breach > 0);
   $('im-t-mttr').textContent = DATA.kpis.mttr_hours.value.toFixed(1);
   $('badge-incidents').textContent = fmtInt(critOpen);
-  $('badge-incidents').hidden = critOpen === 0;
+  $('badge-incidents').hidden = critOpen === 0 || LIVE.on;
 
   const tb = $('tb-cases');
   tb.replaceChildren();
@@ -2862,7 +2979,7 @@ function autoStats() {
   $('au-t-saved').textContent = fmtInt(s.saved_hours);
   $('au-t-pending').textContent = fmtInt(pending);
   $('badge-automation').textContent = fmtInt(pending);
-  $('badge-automation').hidden = pending === 0;
+  $('badge-automation').hidden = pending === 0 || LIVE.on;
 }
 
 function decide(a, ok) {
@@ -2968,7 +3085,7 @@ function drawLogs() {
     const tr = el('tr', null, null, tb);
     td(tr, r.source);
     td(tr, r.type, 'soc-opt');
-    td(tr, fmtInt(r.eps), 'soc-num');
+    td(tr, r.eps && r.eps < 10 ? r.eps.toFixed(2) : fmtInt(r.eps), 'soc-num');
     td(tr, ago(r.last_seen_min), 'soc-num');
     statusChip(tr, r.status);
   });
@@ -2988,8 +3105,9 @@ function drawSiem() {
   $('sh-nodes').textContent = fmtInt(nodes.length);
   $('sh-healthy').textContent = fmtInt(healthy);
   $('sh-total').textContent = fmtInt(logs.length);
-  $('sh-eps').textContent = fmtInt(totalEps);
-  $('sh-eps-tile').textContent = fmtInt(totalEps);
+  const epsText = totalEps && totalEps < 10 ? totalEps.toFixed(2) : fmtInt(totalEps);
+  $('sh-eps').textContent = epsText;
+  $('sh-eps-tile').textContent = epsText;
   $('sh-agents').textContent = fmtInt(agentsOk);
   $('sh-agents-total').textContent = fmtInt(agents.length);
   $('sh-bad').textContent = fmtInt(delayed + down);
@@ -3001,7 +3119,7 @@ function drawSiem() {
   $('badge-siem').textContent = fmtInt(problems);
   $('badge-siem').hidden = problems === 0;
 
-  const pct = (tr, v) => td(tr, fmtPct(v), 'soc-num' + (v >= 0.8 ? ' soc-warn' : ''));
+  const pct = (tr, v) => (v == null ? td(tr, '—', 'soc-num tone-muted') : td(tr, fmtPct(v), 'soc-num' + (v >= 0.8 ? ' soc-warn' : '')));
   const tn = $('tb-nodes');
   tn.replaceChildren();
   nodes.forEach((n) => {
@@ -3211,7 +3329,7 @@ function ansTuning() {
   const wait = DATA.tuning.filter((t) => !t.decision);
   return [
     {p: '5 rule paling berisik (30 hari):'},
-    {ul: top.map((r) => r.rule + ': ' + fmtInt(r.alerts) + ' alert, FP rate ' + fmtPct(r.fp))},
+    {ul: top.map((r) => r.rule + ': ' + fmtInt(r.alerts) + ' alert' + (r.fp == null ? '' : ', FP rate ' + fmtPct(r.fp)))},
     {p: wait.length ? wait.length + ' usulan tuning menunggu persetujuan:' : 'Tidak ada usulan tuning yang menunggu.'},
     wait.length ? {ul: wait.map((t) => t.id + ' ' + t.kind + ' untuk "' + t.rule + '", berlaku ' + t.expires_days + ' hari' + (/\*/.test(t.change) ? ' (cakupan luas, tinjau ulang)' : ''))} : {},
     {go: [{view: 'automation'}, {view: 'overview', label: 'Lihat rule berisik'}]},
@@ -3592,6 +3710,31 @@ function initChat() {
   let saved = null;
   try { saved = localStorage.getItem('socChatOpen'); } catch (e) {}
   setChat(saved ? saved === '1' : window.innerWidth >= 1440, false);
+}
+
+// ---- Label data asli vs contoh ----
+function viewNote(view, kind, html) {
+  const head = document.querySelector('#view-' + view + ' .soc-head');
+  if (!head) return;
+  const p = document.createElement('p');
+  p.className = 'live-note ' + kind;
+  p.innerHTML = html;
+  head.append(p);
+}
+if (LIVE.on) {
+  const stamp = LIVE.at.toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'});
+  const live = (extra) => '<b>Data Wazuh asli</b> per ' + stamp + ' (hanya baca).' + (extra ? ' ' + extra : '');
+  const sample = (what) => '<b>Data contoh.</b> ' + what + ' belum terhubung ke Wazuh.';
+  viewNote('overview', 'live', live('Insiden, MTTD, MTTR, dan FP rate belum ada sumbernya di Wazuh, jadi dikosongkan.'));
+  viewNote('alerts', 'live', live('Menampilkan ' + fmtInt(LIVE.alertShown) + ' alert terbaru dari ' + fmtInt(LIVE.alertTotal) + ' (7 hari, level 3+). Penugasan dan status belum bisa diubah dari sini. Kolom Label AI hanya terisi untuk alert contoh.'));
+  viewNote('ai', 'sample', sample('Investigasi AI memakai alert dan insiden contoh;') + ' Pipeline-nya masih simulasi.');
+  viewNote('intel', 'sample', '<b>Data publik dan contoh.</b> KEV, UNSW-NB15, dan EuRepoC adalah dataset publik; feed TI dan IOC di bawahnya contoh, belum terhubung ke Wazuh.');
+  viewNote('incidents', 'sample', sample('Insiden dan kasus'));
+  viewNote('automation', 'sample', sample('Playbook, eksekusi, dan persetujuan'));
+  viewNote('siem', 'live', live('Metrik CPU/heap/disk per node belum tersedia dari API; EPS dihitung dari alert 15 menit terakhir.'));
+  viewNote('admin', 'sample', '<b>Data contoh</b> untuk pengguna dan peran (akses nyata lewat login Caddy). Integrasi dan audit log diambil dari Wazuh.');
+  const note = document.querySelector('.side-note');
+  if (note) note.textContent = 'Terhubung ke Wazuh di VPS (hanya baca). Halaman yang berlabel "Data contoh" belum punya sumber data asli. Dataset publik UNSW-NB15, CISA KEV, dan EuRepoC dipakai untuk riset non-komersial.';
 }
 
 drawOverview();
