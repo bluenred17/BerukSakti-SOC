@@ -1,6 +1,6 @@
 # PROGRESS — BerukSakti
 
-Rangkuman status proyek per 3 November 2026 (sampai commit penyesuaian dashboard dengan laporan orkestrasi).
+Rangkuman status proyek per 3 November 2026, sampai commit `e7577f9` (chatbox Asisten SOC). Semua commit sudah di-push dan tayang di Vercel.
 
 - Repo: https://github.com/bluenred17/BerukSakti-SOC (branch `master`)
 - Website: https://beruksakti-soc.vercel.app
@@ -12,7 +12,7 @@ Rangkuman status proyek per 3 November 2026 (sampai commit penyesuaian dashboard
 BerukSakti terdiri dari dua halaman web statis:
 
 1. **Halaman pencarian BerukSakti** (`google-search.html`): halaman depan pencarian pribadi bergaya Perplexity. Pengguna bisa memilih mencari di web (diteruskan ke Google) atau bertanya ke AI (diteruskan ke claude.ai).
-2. **Dashboard Beruk Sakti Monitoring** (`soc-monitoring.html`): dashboard Security Operations Center (SOC) untuk memantau alert, insiden, intelijen ancaman, otomasi, dan kesehatan SIEM.
+2. **Dashboard Beruk Sakti Monitoring** (`soc-monitoring.html`): dashboard Security Operations Center (SOC) untuk memantau alert, insiden, intelijen ancaman, otomasi, dan kesehatan SIEM, dilengkapi chatbox Asisten SOC di sisi kanan.
 
 Requirement utama yang diminta:
 
@@ -30,6 +30,7 @@ Requirement utama yang diminta:
 | 7 | SIEM Health | Cluster health, ingestion monitoring, agent status, pipeline errors |
 | 8 | Administration | User management, RBAC, integration settings, audit |
 
+- Chatbox AI di sisi kanan dashboard (diputuskan: simulasi dulu, menjawab dari data dashboard).
 - Bisa dibuka publik oleh siapa pun lewat website.
 - Tampilan berfungsi di desktop dan HP.
 - Dashboard mengikuti rancangan **SOC Automation** di `multi-agent-orchestration-report.md`: Elastic Security sebagai SIEM, LLM sebagai **FP Classifier** (prioritas: mengurangi false positive), alur Triage → Analisa → Reporting, dan human-in-the-loop. Laporan itu menjadi roadmap backend; dashboard menjadi tampilannya.
@@ -55,7 +56,7 @@ D:\Project\aibuilder\
 ├── PROGRESS.md            # File ini
 ├── multi-agent-orchestration-report.md  # Rancangan SOC Automation (roadmap backend), belum di-commit
 ├── google-search.html     # Halaman pencarian BerukSakti (gaya Perplexity)
-├── soc-monitoring.html    # Dashboard Beruk Sakti Monitoring, 8 modul
+├── soc-monitoring.html    # Dashboard Beruk Sakti Monitoring, 8 modul + Asisten SOC
 └── vercel.json            # Konfigurasi Vercel: cleanUrls + rewrite "/" ke halaman pencarian
 ```
 
@@ -68,7 +69,7 @@ Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
 | File | Isi | Ukuran |
 |---|---|---|
 | `google-search.html` | Halaman pencarian BerukSakti bergaya Perplexity | ±380 baris |
-| `soc-monitoring.html` | Dashboard SOC 8 modul + data contoh + peta ancaman animasi | ±2.650 baris |
+| `soc-monitoring.html` | Dashboard SOC 8 modul + chatbox Asisten SOC + data contoh + peta ancaman animasi | ±3.130 baris |
 | `vercel.json` | `cleanUrls: true`, rewrite `/` → `/google-search` | 6 baris |
 | `README.md` | Penjelasan proyek (masih versi lama) | — |
 | `PROGRESS.md` | Rangkuman progres ini | — |
@@ -85,7 +86,9 @@ Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
 | `51c4c65` | Tambah sidebar panel di dashboard |
 | `b116fd0` | Kembangkan dashboard menjadi 8 modul SOC |
 | `986ad77` | Tambah PROGRESS.md |
-| *(commit terbaru)* | Sesuaikan dashboard dengan laporan orkestrasi (FP Classifier, fail-safe, tuning rule, metrik FP) |
+| `1ed0e4f` | Sesuaikan dashboard dengan laporan orkestrasi (FP Classifier, fail-safe, tuning rule, metrik FP) |
+| `25b7672` | Rapikan daftar skor risiko di AI Investigation agar kolom sejajar |
+| `e7577f9` | Tambah chatbox Asisten SOC (simulasi) di sisi kanan dashboard |
 
 **URL publik (sudah dicek mengembalikan HTTP 200)**
 
@@ -99,7 +102,7 @@ Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
 
 ## 4. Fitur yang sudah selesai dan sudah diuji
 
-Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 dan HP 375×812), dengan pengecekan console error dan pengujian interaksi lewat JavaScript. Tidak ada test otomatis di repo.
+Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 dan 1440×860, HP 375×812), dengan pengecekan console error dan pengujian interaksi lewat JavaScript. Tidak ada test otomatis di repo.
 
 ### Halaman pencarian (`google-search.html`)
 
@@ -116,18 +119,18 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 - [x] **Navigasi modul** lewat klik dan lewat hash URL (`#alerts`, dst.).
 - [x] **1. SOC Overview**: 6 KPI, grafik tren alert 14 hari (tooltip), distribusi severity 7 hari dengan perbandingan minggu sebelumnya, tabel ancaman teratas, grafik taktik MITRE ATT&CK, **metrik pengurangan false positive** (FP rate, miss rate, waktu analis per alert, alert yang butuh sentuhan manusia, usulan tuning disetujui; warna sesuai arah perbaikan), dan **Top 10 rule paling berisik** dengan FP rate.
 - [x] **2. Alert Management**: antrean 14 alert, filter (cari, severity, status, analis), ubah analis dan status triage langsung di tabel, kolom **Label AI** (`ai-triage:fp-suspected` / `tp-likely` / `needs-review`). Diuji: penugasan menurunkan badge 5 → 4; filter Critical menampilkan 3 baris; 3 alert punya label AI sesuai aturan keputusan.
-- [x] **3. AI Investigation** (mengikuti laporan orkestrasi): data FP Classifier memakai skema JSON laporan (`verdict`, `confidence`, `reasoning`, `evidence`, `recommended_action`, `tuning_suggestion`); **aturan keputusan** (label FP hanya bila confidence ≥ 0,9, ada bukti, dan aset non-kritikal; selain itu eskalasi); **fail-safe** (output tidak valid atau tanpa bukti selalu dieskalasi); 5 KPI (diduga FP, dieskalasi, kesesuaian dengan analis, miss rate, golden set); roadmap 5 fase dengan fase berjalan "Mode bayangan"; skor risiko; kartu per alert/insiden berisi alasan, bukti berupa field log, korelasi log, rekomendasi, usulan tuning, dan output JSON. Diuji: 7 investigasi menghasilkan 2 label FP dan 5 eskalasi (1 karena fail-safe pada ALR-90411 yang tanpa bukti).
+- [x] **3. AI Investigation** (mengikuti laporan orkestrasi): data FP Classifier memakai skema JSON laporan (`verdict`, `confidence`, `reasoning`, `evidence`, `recommended_action`, `tuning_suggestion`); **aturan keputusan** (label FP hanya bila confidence ≥ 0,9, ada bukti, dan aset non-kritikal; selain itu eskalasi); **fail-safe** (output tidak valid atau tanpa bukti selalu dieskalasi); 5 KPI (diduga FP, dieskalasi, kesesuaian dengan analis, miss rate, golden set); roadmap 5 fase dengan fase berjalan "Mode bayangan"; daftar skor risiko dengan kolom ID, nama, bar, dan angka yang sejajar di semua baris; kartu per alert/insiden berisi alasan, bukti berupa field log, korelasi log, rekomendasi, usulan tuning, dan output JSON. Diuji: 7 investigasi menghasilkan 2 label FP dan 5 eskalasi (1 karena fail-safe pada ALR-90411 yang tanpa bukti).
 - [x] **4. Threat Intelligence**: lookup IOC dengan deteksi tipe (IPv4, domain, MD5/SHA-1/SHA-256), hasil reputasi dan enrichment (skor, negara, ASN, tag, insiden terkait), tabel feed, tabel IOC yang bisa diklik. Diuji: IOC dikenal, IP tidak dikenal, dan format salah.
 - [x] **5. Incident Management**: tabel kasus dengan SLA (lewat SLA merah), timeline investigasi per kasus (klik baris), tabel insiden yang bisa dicari dan diurutkan. Diuji: klik kasus mengganti timeline.
 - [x] **6. Automation Center**: tombol Setujui/Tolak aksi, **antrean persetujuan tuning rule** dari FP Classifier (exception/ubah kondisi, masa berlaku, dasar usulan; exception dengan wildcard ditandai "cakupan luas"), playbook dengan toggle aktif, riwayat eksekusi. Diuji: menyetujui APR-311 menurunkan badge dan mengubah status eksekusi menjadi Running; menyetujui TUN-042 menurunkan badge 6 → 5 dan tercatat di audit log.
 - [x] **7. SIEM Health**: status cluster (Green/Yellow/Red), CPU/heap/disk tiap node, ingestion per sumber log, status agen, error pipeline.
-- [x] **Asisten SOC (chatbox kanan, simulasi)**: panel di sisi kanan yang bisa dibuka/tutup (tombol "Tanya AI"); menempel di kanan pada layar ≥ 1100 px, menutupi halaman pada layar sempit. Menjawab dari objek `DATA`: ringkasan kondisi SOC, detail ID (`INC-`, `ALR-`, `CASE-`, `APR-`, `TUN-`), reputasi IOC (IP/domain/hash), insiden kritis & SLA, alert belum ditugaskan, false positive, rule berisik & tuning, persetujuan, kesehatan SIEM, playbook, KPI, admin, dan "jelaskan halaman ini". Jawaban punya tombol yang membuka modul terkait (mis. timeline kasus, Lookup IOC). Pertanyaan di luar data ditolak dengan jelas. Diuji: 18 jenis pertanyaan, tombol navigasi, tampilan desktop 1440 px dan HP, tanpa error console.
 - [x] **8. Administration**: tabel pengguna (MFA, status), matriks RBAC, integrasi dengan toggle, audit log yang ikut mencatat perubahan di halaman. Diuji: audit log bertambah setelah penugasan dan persetujuan.
+- [x] **Asisten SOC (chatbox kanan, simulasi)**: panel di sisi kanan yang bisa dibuka/tutup (tombol "Tanya AI", ✕ tutup, ↺ percakapan baru, Esc menutup di layar sempit); menempel di kanan pada layar > 1100 px dan terbuka otomatis pada layar ≥ 1440 px, menutupi halaman pada layar sempit. Menjawab dari objek `DATA`: ringkasan kondisi SOC, detail ID (`INC-`, `ALR-`, `CASE-`, `APR-`, `TUN-`), reputasi IOC (IP/domain/hash), insiden kritis & SLA, alert belum ditugaskan, false positive, rule berisik & tuning, persetujuan, kesehatan SIEM, playbook, KPI, admin, dan "jelaskan halaman ini". Jawaban punya tombol yang membuka modul terkait (mis. timeline kasus, Lookup IOC). Pertanyaan di luar data ditolak dengan jelas. Diuji: 18 jenis pertanyaan, tombol navigasi, tampilan desktop 1440 px dan HP, tanpa error console.
 
 ### Deploy
 
 - [x] Repo di-push ke GitHub.
-- [x] Project Vercel `beruksakti-soc` (team BerukSakti) terhubung ke repo; deploy otomatis saat push ke `master`. Diuji: tiga URL di atas mengembalikan 200, dan versi 8 modul sudah tayang.
+- [x] Project Vercel `beruksakti-soc` (team BerukSakti) terhubung ke repo; deploy otomatis saat push ke `master`. Diuji: tiga URL di atas mengembalikan 200 (dicek ulang 3 November 2026), dan versi terbaru dengan Asisten SOC sudah tayang.
 
 ---
 
@@ -173,7 +176,7 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 7. **Mode gelap saja** untuk dashboard (gaya ruang SOC); warna status konsisten: hijau = sehat, kuning = perlu perhatian, merah = bermasalah, biru = sedang berjalan.
 8. **Vercel dengan `cleanUrls`**: alamat tanpa `.html`; tujuan rewrite juga harus ditulis tanpa `.html` (penyebab 404 pada deploy pertama).
 9. **Hosting di Vercel lewat integrasi GitHub**, bukan Vercel CLI: setiap `git push` ke `master` otomatis deploy.
-10. **Perubahan di halaman sengaja tidak disimpan** (tanpa `localStorage`) karena ini data contoh bersama; penyimpanan sungguhan butuh backend.
+10. **Perubahan data di halaman sengaja tidak disimpan** (penugasan, persetujuan, toggle, percakapan chat) karena ini data contoh bersama; penyimpanan sungguhan butuh backend. `localStorage` hanya dipakai untuk preferensi tampilan per browser (mode Cari/Tanya AI di halaman pencarian, panel Asisten SOC terbuka atau tertutup).
 11. **Data AI mengikuti skema JSON FP Classifier dari laporan orkestrasi**, supaya output LLM nanti bisa ditampilkan tanpa diubah. Field tambahan (`risk`, `asset_critical`, `correlated`, `next_steps`) diperlakukan sebagai hasil enrichment pipeline, bukan output LLM.
 12. **Aturan keputusan dan fail-safe dijalankan di dashboard (`decide_ai`)**, bukan dipercaya dari LLM: output tidak valid atau tanpa bukti selalu jadi `needs-review`. Di backend nanti aturan yang sama harus diterapkan sebelum tag ditulis ke Elastic.
 13. **Tuning rule selalu lewat persetujuan manusia**, dan exception yang memakai wildcard ditandai agar ditinjau ulang (prinsip "exception sempit + masa berlaku" dari laporan).
@@ -189,9 +192,10 @@ Urutan yang disarankan:
 2. **Jawab keputusan terbuka dari laporan orkestrasi** (volume alert, jumlah analis, versi Elastic, model LLM, kebijakan privasi), lalu jalankan **Fase 0**: ekspor alert 30–90 hari dari Elastic, hitung Top 10 rule paling berisik, dan catat baseline FP rate, waktu analis, MTTD/MTTR. Hasilnya menggantikan data contoh di SOC Overview.
 3. **Tambahkan autentikasi** sebelum data asli masuk (mis. Vercel Password Protection, SSO, atau login sendiri), lalu terapkan RBAC yang sudah ada di modul Administration.
 4. **Bangun pipeline FP Classifier** (n8n/Python di server sendiri, bukan di Vercel) sesuai laporan: dedup, enrichment, pre-filter, LLM dengan output JSON tervalidasi, aturan keputusan + fail-safe yang sama dengan `decide_ai`, lalu backend kecil yang menyediakan hasilnya ke dashboard dalam bentuk objek `DATA`.
-5. **Simpan perubahan pengguna** (penugasan, status triage, persetujuan aksi dan tuning, toggle, audit log) ke database lewat backend.
-6. **Sambungkan aksi nyata**: lookup IOC ke API reputasi, persetujuan aksi ke mesin SOAR/playbook, persetujuan tuning ke exception rule di Elastic, toggle integrasi ke konfigurasi asli.
-7. **Refresh data otomatis** (polling berkala) dan tampilkan waktu pembaruan terakhir.
-8. **Lengkapi halaman pencarian**: tujuan untuk menu Pustaka (mis. riwayat pencarian) dan link footer.
-9. **Pertimbangkan memecah `soc-monitoring.html`** (±2.650 baris) menjadi file CSS/JS/data terpisah begitu mulai terhubung ke API.
-10. **Opsional**: commit `multi-agent-orchestration-report.md` ke repo sebagai dokumen desain; aktifkan 2FA di akun Vercel; ganti nama branch ke `main` bila diinginkan.
+5. **Sambungkan Asisten SOC ke AI sungguhan** setelah login ada: endpoint backend (mis. Vercel Serverless Function `/api/chat`) yang memanggil Claude API dengan API key di environment variable Vercel, diberi konteks data dashboard, dibatasi pemakaiannya, lalu `askAssistant()` diarahkan ke endpoint itu dengan format blok yang sama.
+6. **Simpan perubahan pengguna** (penugasan, status triage, persetujuan aksi dan tuning, toggle, audit log) ke database lewat backend.
+7. **Sambungkan aksi nyata**: lookup IOC ke API reputasi, persetujuan aksi ke mesin SOAR/playbook, persetujuan tuning ke exception rule di Elastic, toggle integrasi ke konfigurasi asli.
+8. **Refresh data otomatis** (polling berkala) dan tampilkan waktu pembaruan terakhir.
+9. **Lengkapi halaman pencarian**: tujuan untuk menu Pustaka (mis. riwayat pencarian) dan link footer.
+10. **Pertimbangkan memecah `soc-monitoring.html`** (±3.130 baris) menjadi file CSS/JS/data terpisah begitu mulai terhubung ke API.
+11. **Opsional**: commit `multi-agent-orchestration-report.md` ke repo sebagai dokumen desain; aktifkan 2FA di akun Vercel; ganti nama branch ke `main` bila diinginkan.
