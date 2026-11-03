@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -310,13 +311,44 @@ def ioc_in_lists(value):
         if probe and probe in entry["entries"]:found.append({"list":entry["label"],"file":entry["file"],"tag":entry["entries"][probe]})
     return found
 
+ABUSE_KEY=os.environ.get("ABUSEIPDB_API_KEY","").strip()
+_abuse_cache={};_abuse_lock=threading.Lock();_abuse_day=[0,""]
+ABUSE_DAILY_LIMIT=int(os.environ.get("ABUSEIPDB_DAILY_LIMIT","900"))
+
+def abuse_check(value):
+    """Reputasi IP dari AbuseIPDB. Hanya IP publik; hasil di-cache 24 jam agar kuota gratis (1000/hari) hemat."""
+    if not ABUSE_KEY:return {"status":"disabled"}
+    try:ip=ipaddress.ip_address(value.strip())
+    except ValueError:return {"status":"skipped","reason":"Bukan alamat IP"}
+    if not ip.is_global:return {"status":"skipped","reason":"IP privat atau lokal tidak dikirim ke AbuseIPDB"}
+    ip=str(ip);now=time.time()
+    with _abuse_lock:
+        hit=_abuse_cache.get(ip)
+        if hit and now-hit[0]<86400:return hit[1]
+        today=time.strftime("%Y-%m-%d",time.gmtime(now))
+        if _abuse_day[1]!=today:_abuse_day[0]=0;_abuse_day[1]=today
+        if _abuse_day[0]>=ABUSE_DAILY_LIMIT:return {"status":"error","reason":"Batas kuota harian AbuseIPDB tercapai"}
+        _abuse_day[0]+=1
+    req=Request("https://api.abuseipdb.com/api/v2/check?"+urlencode({"ipAddress":ip,"maxAgeInDays":90}),headers={"Key":ABUSE_KEY,"Accept":"application/json"})
+    try:
+        with urlopen(req,timeout=8) as r:d=json.loads(r.read().decode()).get("data",{})
+    except HTTPError as exc:
+        logging.warning("abuseipdb http %s",exc.code)
+        return {"status":"error","reason":"Kuota AbuseIPDB habis" if exc.code==429 else "API key AbuseIPDB ditolak" if exc.code in (401,403) else "AbuseIPDB error %s"%exc.code}
+    except Exception as exc:
+        logging.warning("abuseipdb failed: %s",type(exc).__name__)
+        return {"status":"error","reason":"AbuseIPDB tidak terjangkau"}
+    out={"status":"ok","score":int(d.get("abuseConfidenceScore") or 0),"reports":int(d.get("totalReports") or 0),"users":int(d.get("numDistinctUsers") or 0),"country":d.get("countryCode") or "","isp":d.get("isp") or "","usage":d.get("usageType") or "","domain":d.get("domain") or "","tor":bool(d.get("isTor")),"whitelisted":bool(d.get("isWhitelisted")),"last_reported":d.get("lastReportedAt") or ""}
+    with _abuse_lock:_abuse_cache[ip]=(now,out)
+    return out
+
 def get_ioc(value):
     value=value.strip()[:250]
     if not value:raise ValueError("Masukkan IP, domain, URL, atau hash")
     should=[{"term":{"data.srcip":value}},{"term":{"data.url":value}},{"term":{"data.sha256_after":value}},{"term":{"data.md5_after":value}},{"match_phrase":{"full_log":value}}]
     body={"size":50,"track_total_hits":True,"query":{"bool":{"filter":[range_filter("timestamp","now-30d")],"should":should,"minimum_should_match":1}},"sort":[{"timestamp":{"order":"desc"}}],"_source":["timestamp","agent.name","rule.id","rule.level","rule.description","data.srcip","data.url","data.sha256_after","data.md5_after"]}
     res=es_search("wazuh-alerts-*",body)
-    return {"value":value,"observed":int(res.get("hits",{}).get("total",{}).get("value",0)),"reputation":"Not checked — no external TI provider connected","lists":ioc_in_lists(value),"events":[source_alert(h) for h in res.get("hits",{}).get("hits",[])]}
+    return {"value":value,"observed":int(res.get("hits",{}).get("total",{}).get("value",0)),"abuseipdb":abuse_check(value),"lists":ioc_in_lists(value),"events":[source_alert(h) for h in res.get("hits",{}).get("hits",[])]}
 
 def geo_sources(hours=24):
     """IP sumber alert (GeoIP Wazuh) dikelompokkan per IP: jumlah, level tertinggi, dan koordinat."""
