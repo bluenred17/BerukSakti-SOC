@@ -256,6 +256,60 @@ body::after {
 .switch input:checked + span { background: var(--accent); }
 .switch input:checked + span::after { transform: translateX(16px); }
 .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Right-hand AI assistant panel; docked on wide screens, a drawer over the page on narrow ones */
+.chat {
+  display: none;
+  width: 360px;
+  flex: none;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  flex-direction: column;
+  background: rgba(9, 14, 22, .9);
+  border-left: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.app.chat-open .chat { display: flex; }
+.chat-head { display: flex; align-items: center; gap: 6px; padding: 14px 12px 12px 16px; border-bottom: 1px solid var(--line); }
+.chat-title { flex: 1; display: flex; align-items: center; gap: 10px; color: var(--accent); min-width: 0; }
+.chat-title span { display: flex; flex-direction: column; color: var(--fg); font-weight: 600; line-height: 1.25; }
+.chat-title small { font-weight: 400; font-size: 11px; color: var(--muted); }
+.chat-icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border: 0; border-radius: var(--radius); background: none; color: var(--muted); cursor: pointer; }
+.chat-icon:hover { color: var(--fg); background: rgba(91, 157, 224, .1); }
+.chat-icon:focus-visible, .chat-send:focus-visible, .chat-toggle:focus-visible, .msg-link:focus-visible, .chat-chips button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chat-log { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 92%; padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.msg p { margin: 0; }
+.msg ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+.msg.user { align-self: flex-end; background: var(--accent); color: #06101c; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+.msg.bot { align-self: flex-start; background: var(--panel-solid); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.msg-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.msg-link { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--accent); border-radius: 999px; background: none; color: var(--accent); cursor: pointer; }
+.msg-link:hover { background: rgba(91, 157, 224, .14); }
+.typing { display: flex; gap: 4px; padding: 12px 14px; }
+.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: .4; }
+@media (prefers-reduced-motion: no-preference) {
+  .typing span { animation: chat-dot 1s infinite; }
+  .typing span:nth-child(2) { animation-delay: .15s; }
+  .typing span:nth-child(3) { animation-delay: .3s; }
+}
+@keyframes chat-dot { 50% { opacity: 1; } }
+.chat-chips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px 2px; scrollbar-width: none; }
+.chat-chips button { flex: none; font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.chat-chips button:hover { color: var(--fg); border-color: var(--muted); }
+.chat-form { display: flex; align-items: flex-end; gap: 8px; margin: 8px 12px 6px; padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.chat-form:focus-within { border-color: var(--accent); }
+.chat-form textarea { flex: 1; min-width: 0; max-height: 120px; resize: none; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 13px; line-height: 1.5; padding: 4px 0; }
+.chat-form textarea::placeholder { color: var(--muted); }
+.chat-send { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border: 0; border-radius: 8px; background: var(--accent); color: #06101c; cursor: pointer; }
+.chat-send:disabled { background: var(--muted-bar); color: var(--muted); cursor: default; }
+.chat-foot { margin: 0 12px 10px; font-size: 11px; color: var(--muted); }
+.chat-toggle { position: fixed; right: 20px; bottom: 20px; z-index: 19; display: flex; align-items: center; gap: 8px; padding: 10px 16px; border: 0; border-radius: 999px; background: var(--accent); color: #06101c; font: inherit; font-weight: 600; cursor: pointer; box-shadow: var(--shadow); }
+.chat-toggle[hidden] { display: none; }
+@media (max-width: 1100px) {
+  .chat { position: fixed; top: 0; right: 0; bottom: 0; height: auto; width: min(100%, 400px); z-index: 20; box-shadow: var(--shadow); }
+}
 @media (max-width: 640px) {
   .soc-opt { display: none; }
   .risk-list { grid-template-columns: max-content minmax(0, 1fr) 2.5em; }
@@ -958,7 +1012,36 @@ body::after {
   </div>
 </section>
 </main>
+
+<aside class="chat" id="chat" aria-label="Asisten SOC">
+  <header class="chat-head">
+    <div class="chat-title">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
+      <span>Asisten SOC<small>Simulasi · menjawab dari data dashboard</small></span>
+    </div>
+    <button type="button" class="chat-icon" id="chat-clear" title="Mulai percakapan baru" aria-label="Mulai percakapan baru">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 1 0 1.6-7.3L4 10"/></svg>
+    </button>
+    <button type="button" class="chat-icon" id="chat-close" title="Tutup asisten" aria-label="Tutup asisten">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </header>
+  <div class="chat-log" id="chat-log" role="log" aria-live="polite"></div>
+  <div class="chat-chips" id="chat-chips"></div>
+  <form class="chat-form" id="chat-form">
+    <textarea id="chat-input" rows="1" placeholder="Tanya soal alert, insiden, IOC…" aria-label="Pesan untuk asisten"></textarea>
+    <button type="submit" class="chat-send" id="chat-send" aria-label="Kirim">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+  </form>
+  <p class="chat-foot">Jawaban disusun dari data contoh di dashboard, bukan dari model AI.</p>
+</aside>
 </div>
+
+<button type="button" class="chat-toggle" id="chat-toggle" aria-controls="chat" aria-expanded="false">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
+  Tanya AI
+</button>
 
 <script>
 // ---- Data contoh (ganti dengan data SIEM Anda) ----
@@ -2407,6 +2490,405 @@ document.querySelectorAll('.side-link').forEach((a) => a.addEventListener('click
   showView(a.dataset.view);
 }));
 
+// ---- AI assistant (simulated) ----
+// Answers are built from DATA with keyword rules. To use a real model later, make askAssistant()
+// call a backend (e.g. /api/chat) and resolve with the same block format:
+// {p: text} paragraph, {ul: [text]} list, {go: [{view, label?, then?}]} buttons that open a module.
+const VIEW_NAME = {overview: 'SOC Overview', alerts: 'Alert Management', ai: 'AI Investigation', intel: 'Threat Intelligence', incidents: 'Incident Management', automation: 'Automation Center', siem: 'SIEM Health', admin: 'Administration'};
+const has = (q, ...words) => words.some((w) => q.includes(w));
+const currentView = () => VIEWS.find((k) => !$('view-' + k).hidden) || 'overview';
+const pendingCount = () => DATA.approvals.filter((a) => !a.decision).length + DATA.tuning.filter((t) => !t.decision).length;
+const openAlerts = () => DATA.alerts.filter((a) => !isClosed(a.status));
+
+function ansHelp() {
+  return [
+    {p: 'Halo! Saya asisten SOC (simulasi). Saya menjawab dari data yang tampil di dashboard ini. Contoh yang bisa ditanyakan:'},
+    {ul: [
+      'Ringkas kondisi SOC hari ini',
+      'Sebutkan ID, misalnya INC-2611-041, ALR-90407, atau CASE-118',
+      'Cek reputasi IOC, misalnya 185.220.101.47',
+      'Alert mana yang diduga false positive?',
+      'Apa yang menunggu persetujuan?',
+      'Bagaimana kesehatan SIEM?',
+      'Jelaskan halaman ini',
+    ]},
+  ];
+}
+
+function ansSummary() {
+  const top = openInc.filter((i) => i.severity === 'Critical').sort((a, b) => b.opened.localeCompare(a.opened))[0];
+  const unassignedNow = openAlerts().filter((a) => !a.assignee).length;
+  return [
+    {p: 'Ringkasan kondisi SOC per ' + fmtLong(today.date) + ':'},
+    {ul: [
+      critOpen + ' insiden kritis masih terbuka, dari ' + openInc.length + ' insiden terbuka.',
+      'Alert hari ini ' + fmtInt(today.total) + ', ' + (vsAvg >= 0 ? 'naik ' : 'turun ') + fmtPct(Math.abs(vsAvg)) + ' dari rata-rata 13 hari sebelumnya.',
+      unassignedNow + ' alert terbuka belum punya analis.',
+      pendingCount() + ' aksi atau tuning rule menunggu persetujuan.',
+      down + ' sumber log mati dan ' + delayed + ' terlambat mengirim data.',
+    ]},
+    top ? {p: 'Prioritas yang saya sarankan: ' + top.id + ' (' + top.title + '), status ' + top.status + ', antrean ' + top.queue + '.'} : {},
+    {go: [{view: 'incidents'}, {view: 'alerts'}, {view: 'automation'}]},
+  ];
+}
+
+function ansIncidents() {
+  const crit = openInc.filter((i) => i.severity === 'Critical');
+  const late = DATA.cases.filter((c) => c.status !== 'Closed' && c.sla_left_min < 0);
+  return [
+    {p: crit.length + ' insiden kritis masih terbuka:'},
+    {ul: crit.map((i) => i.id + ': ' + i.title + ' (' + i.status + ', ' + i.queue + ')')},
+    {p: late.length
+      ? 'Kasus yang melewati SLA: ' + late.map((c) => c.id + ' ' + c.title + ', lewat ' + dur(-c.sla_left_min)).join('; ') + '.'
+      : 'Tidak ada kasus yang melewati SLA.'},
+    {go: [{view: 'incidents'}]},
+  ];
+}
+
+function ansAlerts() {
+  const open = openAlerts();
+  const free = open.filter((a) => !a.assignee);
+  const by = (s) => DATA.alerts.filter((a) => a.status === s).length;
+  return [
+    {p: open.length + ' alert belum ditutup: ' + by('New') + ' baru, ' + by('In triage') + ' sedang triage, ' + by('Escalated') + ' dieskalasi.'},
+    free.length ? {p: 'Belum punya analis:'} : {p: 'Semua alert terbuka sudah punya analis.'},
+    free.length ? {ul: free.map((a) => a.id + ' [' + a.severity + '] ' + a.rule)} : {},
+    {go: [{view: 'alerts'}]},
+  ];
+}
+
+function ansFalsePositive() {
+  const fp = DATA.ai_investigations.filter((r) => !decide_ai(r).escalate);
+  const failsafe = DATA.ai_investigations.filter((r) => decide_ai(r).failsafe);
+  const p = DATA.ai_pipeline;
+  return [
+    {p: 'FP Classifier memberi label ai-triage:fp-suspected pada ' + fp.length + ' alert:'},
+    {ul: fp.map((r) => r.id + ': ' + aiSource(r.id).title + ' (keyakinan ' + fmtPct(r.confidence) + ', rekomendasi: ' + ACTION_LABEL[r.recommended_action].toLowerCase() + ')')},
+    failsafe.length ? {p: failsafe.map((r) => r.id).join(', ') + ' dieskalasi oleh fail-safe karena verdict-nya tidak disertai bukti.'} : {},
+    {p: 'FP rate saat ini ' + fmtPct(DATA.kpis.fp_rate.value) + ', miss rate ' + fmtPct(p.miss_rate, 1) + '. Pipeline masih di tahap ' + p.phases[p.phase].name + ', jadi label AI belum menutup alert; analis tetap yang memutuskan.'},
+    {go: [{view: 'ai'}, {view: 'overview', label: 'Lihat metrik FP'}]},
+  ];
+}
+
+function ansTuning() {
+  const top = [...DATA.noisy_rules].sort((a, b) => b.alerts - a.alerts).slice(0, 5);
+  const wait = DATA.tuning.filter((t) => !t.decision);
+  return [
+    {p: '5 rule paling berisik (30 hari):'},
+    {ul: top.map((r) => r.rule + ': ' + fmtInt(r.alerts) + ' alert, FP rate ' + fmtPct(r.fp))},
+    {p: wait.length ? wait.length + ' usulan tuning menunggu persetujuan:' : 'Tidak ada usulan tuning yang menunggu.'},
+    wait.length ? {ul: wait.map((t) => t.id + ' ' + t.kind + ' untuk "' + t.rule + '", berlaku ' + t.expires_days + ' hari' + (/\*/.test(t.change) ? ' (cakupan luas, tinjau ulang)' : ''))} : {},
+    {go: [{view: 'automation'}, {view: 'overview', label: 'Lihat rule berisik'}]},
+  ];
+}
+
+function ansApprovals() {
+  const acts = DATA.approvals.filter((a) => !a.decision);
+  const tun = DATA.tuning.filter((t) => !t.decision);
+  if (!acts.length && !tun.length) return [{p: 'Tidak ada yang menunggu persetujuan saat ini.'}, {go: [{view: 'automation'}]}];
+  return [
+    {p: (acts.length + tun.length) + ' hal menunggu persetujuan:'},
+    {ul: [
+      ...acts.map((a) => a.id + ': ' + a.action + ' (' + a.ref + ')'),
+      ...tun.map((t) => t.id + ': tuning rule "' + t.rule + '"'),
+    ]},
+    {go: [{view: 'automation'}]},
+  ];
+}
+
+function ansSiem() {
+  const warnNodes = DATA.nodes.filter((n) => n.status !== 'Healthy');
+  const badLogs = logs.filter((l) => l.status !== 'Healthy');
+  const badAgents = DATA.agents.filter((a) => a.status !== 'Healthy');
+  const err = [...DATA.pipeline_errors].sort((a, b) => b.count - a.count)[0];
+  const cluster = DATA.nodes.some((n) => n.status === 'Down') ? 'Red' : warnNodes.length ? 'Yellow' : 'Green';
+  return [
+    {p: 'Status cluster ' + cluster + '.'},
+    {ul: [
+      ...warnNodes.map((n) => 'Node ' + n.node + ' ' + n.status + ' (disk ' + fmtPct(n.disk) + ')'),
+      ...badLogs.map((l) => 'Sumber log ' + l.source + ': ' + l.status + ', terakhir terlihat ' + ago(l.last_seen_min)),
+      ...badAgents.map((a) => 'Agen ' + a.host + ': ' + a.status + ', check-in ' + ago(a.last_min)),
+      'Error pipeline terbanyak: ' + err.pipeline + ', ' + err.error.toLowerCase() + ' (' + fmtInt(err.count) + ' event)',
+    ]},
+    {go: [{view: 'siem'}]},
+  ];
+}
+
+function ansIntel() {
+  const top = [...DATA.iocs].sort((a, b) => b.hits - a.hits).slice(0, 3);
+  const late = DATA.ti_feeds.filter((f) => f.synced_min > 120);
+  return [
+    {p: 'IOC dengan kecocokan terbanyak di log:'},
+    {ul: top.map((r) => shortIoc(r.indicator) + ' (' + r.type + ', ' + r.verdict + ' ' + r.score + '): ' + r.threat + ', ' + fmtInt(r.hits) + ' kecocokan')},
+    late.length ? {p: 'Feed yang terlambat sinkron: ' + late.map((f) => f.feed + ' (' + ago(f.synced_min) + ')').join(', ') + '.'} : {},
+    {go: [{view: 'intel'}]},
+  ];
+}
+
+function ansAutomation() {
+  const s = DATA.automation_stats;
+  const failed = DATA.runs.filter((r) => r.status === 'Failed');
+  const off = DATA.playbooks.filter((p) => !p.enabled);
+  return [
+    {p: fmtInt(s.runs_24h) + ' eksekusi playbook dalam 24 jam, ' + fmtPct(s.success) + ' berhasil, menghemat sekitar ' + s.saved_hours + ' jam kerja analis.'},
+    {ul: [
+      pendingCount() + ' aksi atau tuning menunggu persetujuan',
+      ...failed.map((r) => 'Gagal: ' + r.playbook + ' untuk ' + r.target + ' (' + fmtTime(r.time) + ')'),
+      ...off.map((p) => 'Nonaktif: ' + p.name),
+    ]},
+    {go: [{view: 'automation'}]},
+  ];
+}
+
+function ansKpi() {
+  const k = DATA.kpis;
+  const ch = (key) => { const d = kd(key); return (d < 0 ? 'turun ' : 'naik ') + fmtPct(Math.abs(d)); };
+  return [
+    {ul: [
+      'MTTD ' + k.mttd_min.value + ' menit, ' + ch('mttd_min') + ' dari 7 hari sebelumnya',
+      'MTTR ' + k.mttr_hours.value.toFixed(1) + ' jam, ' + ch('mttr_hours'),
+      'False positive rate ' + fmtPct(k.fp_rate.value) + ', ' + ch('fp_rate'),
+    ]},
+    {go: [{view: 'overview'}]},
+  ];
+}
+
+function ansAdmin() {
+  const noMfa = DATA.users.filter((u) => u.active && !u.mfa);
+  const broken = DATA.integrations.filter((i) => i.enabled && i.status.startsWith('Error'));
+  const last = [...DATA.audit].sort((a, b) => b.time.localeCompare(a.time))[0];
+  return [
+    {ul: [
+      DATA.users.filter((u) => u.active).length + ' pengguna aktif, ' + DATA.rbac.roles.length + ' peran',
+      noMfa.length ? 'Belum memakai MFA: ' + noMfa.map((u) => u.name).join(', ') : 'Semua pengguna aktif sudah memakai MFA',
+      ...broken.map((i) => 'Integrasi bermasalah: ' + i.name + ' (' + i.status + ')'),
+      'Aktivitas terakhir di audit log: ' + last.user + ', ' + last.action.toLowerCase() + ' (' + fmtTime(last.time) + ')',
+    ]},
+    {go: [{view: 'admin'}]},
+  ];
+}
+
+function ansAi() {
+  const top = [...DATA.ai_investigations].sort((a, b) => b.risk - a.risk).slice(0, 3);
+  return [
+    {p: 'Skor risiko tertinggi menurut AI:'},
+    {ul: top.map((r) => r.id + ': ' + aiSource(r.id).title + ', risiko ' + r.risk + ', ' + VERDICT_LABEL[r.verdict].toLowerCase())},
+    {go: [{view: 'ai'}]},
+  ];
+}
+
+function ansId(id) {
+  const inc = DATA.incidents.find((i) => i.id === id);
+  if (inc) {
+    const ai = AI_BY_ID[id];
+    const cs = DATA.cases.find((c) => c.incidents.includes(id));
+    return [
+      {p: id + ': ' + inc.title},
+      {ul: [
+        'Severity ' + inc.severity + ', status ' + inc.status + ', antrean ' + inc.queue,
+        'Aset ' + inc.asset + ', taktik ' + inc.tactic,
+        'Dibuka ' + fmtTime(inc.opened) + ' UTC',
+        ai ? 'AI: ' + VERDICT_LABEL[ai.verdict] + ', risiko ' + ai.risk + ', keyakinan ' + fmtPct(ai.confidence) : 'Belum dianalisis AI',
+        cs ? 'Bagian dari ' + cs.id + ' (' + cs.title + '), pemilik ' + cs.owner : 'Belum masuk kasus mana pun',
+      ]},
+      ai ? {p: ai.reasoning} : {},
+      {go: [{view: 'incidents'}, ...(ai ? [{view: 'ai'}] : [])]},
+    ];
+  }
+  const al = DATA.alerts.find((a) => a.id === id);
+  if (al) {
+    const ai = AI_BY_ID[id];
+    return [
+      {p: id + ': ' + al.rule},
+      {ul: [
+        'Severity ' + al.severity + ', sumber ' + al.source + ', aset ' + al.asset,
+        'Status triage ' + al.status + ', analis ' + (al.assignee || 'belum ditugaskan'),
+        'Masuk ' + fmtTime(al.time) + ' UTC',
+        ai ? 'Label AI ' + decide_ai(ai).tag + ': ' + decide_ai(ai).action : 'Belum dianalisis AI',
+      ]},
+      ai && ai.tuning_suggestion ? {p: 'Usulan tuning: ' + ai.tuning_suggestion} : {},
+      {go: [{view: 'alerts'}, ...(ai ? [{view: 'ai'}] : [])]},
+    ];
+  }
+  const cs = DATA.cases.find((c) => c.id === id);
+  if (cs) {
+    const last = [...cs.timeline].sort((a, b) => b.t.localeCompare(a.t))[0];
+    return [
+      {p: id + ': ' + cs.title},
+      {ul: [
+        'Severity ' + cs.severity + ', status ' + cs.status + ', pemilik ' + cs.owner,
+        'Insiden: ' + cs.incidents.join(', '),
+        'SLA: ' + (cs.sla_left_min < 0 ? 'lewat ' : 'sisa ') + dur(Math.abs(cs.sla_left_min)),
+        'Langkah terakhir (' + fmtTime(last.t) + ', ' + last.who + '): ' + last.what,
+      ]},
+      {go: [{view: 'incidents', label: 'Buka timeline', then: () => { selCase = id; drawCases(); drawTimeline(); }}]},
+    ];
+  }
+  const ap = DATA.approvals.find((a) => a.id === id) || DATA.tuning.find((t) => t.id === id);
+  if (ap) {
+    const what = ap.action || 'Tuning rule "' + ap.rule + '": ' + ap.change;
+    return [
+      {p: id + ': ' + what},
+      {p: ap.decision ? 'Sudah ' + ap.decision.toLowerCase() + '.' : 'Masih menunggu persetujuan.'},
+      {go: [{view: 'automation'}]},
+    ];
+  }
+  return [{p: 'Saya tidak menemukan ' + id + ' di data dashboard.'}];
+}
+
+function ansIoc(v) {
+  const hit = REPUTATION.find((r) => r.indicator.toLowerCase() === v.toLowerCase());
+  const look = {view: 'intel', label: 'Buka di Lookup IOC', then: () => { $('ti-q').value = v; lookup(v); }};
+  if (!hit) return [{p: shortIoc(v) + ' (' + iocType(v) + ') tidak ada di feed intelijen yang tersinkron, jadi belum ada data reputasinya.'}, {go: [look]}];
+  return [
+    {p: shortIoc(hit.indicator) + ' dinilai ' + hit.verdict + ' dengan skor ' + hit.score + '/100.'},
+    {ul: [
+      'Ancaman: ' + hit.threat + ' (feed ' + hit.feed + ')',
+      'Negara ' + hit.country + ', ' + hit.asn,
+      fmtInt(hit.hits) + ' kecocokan di log' + (hit.last_seen ? ', terakhir ' + fmtTime(hit.last_seen) + ' UTC' : ''),
+      'Insiden terkait: ' + (hit.incident || 'tidak ada'),
+    ]},
+    {go: [look]},
+  ];
+}
+
+const VIEW_ANSWER = {overview: ansSummary, alerts: ansAlerts, ai: ansAi, intel: ansIntel, incidents: ansIncidents, automation: ansAutomation, siem: ansSiem, admin: ansAdmin};
+
+function answer(raw) {
+  const q = raw.toLowerCase();
+  const ids = raw.toUpperCase().match(/\b(INC-\d{4}-\d{3}|ALR-\d{5}|CASE-\d{3}|APR-\d{3}|TUN-\d{3})\b/g);
+  if (ids) return [...new Set(ids)].flatMap(ansId);
+  const ioc = (raw.match(/\b[a-f0-9]{32,64}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi) || []).find(iocType);
+  if (ioc) return ansIoc(ioc);
+  if (has(q, 'halaman ini', 'modul ini', 'layar ini', 'jelaskan halaman')) {
+    return [{p: 'Anda sedang di ' + VIEW_NAME[currentView()] + '.'}, ...VIEW_ANSWER[currentView()]()];
+  }
+  if (has(q, 'false positive', 'positif palsu', ' fp', 'fp ') || q === 'fp') return ansFalsePositive();
+  if (has(q, 'tuning', 'berisik', 'noisy', 'exception', 'rule')) return ansTuning();
+  if (has(q, 'setuju', 'approval', 'persetujuan', 'menunggu')) return ansApprovals();
+  if (has(q, 'mttd', 'mttr', 'kpi', 'metrik')) return ansKpi();
+  if (has(q, 'ringkas', 'rangkum', 'summary', 'kondisi', 'status soc', 'hari ini', 'prioritas')) return ansSummary();
+  if (has(q, 'insiden', 'incident', 'kritis', 'critical', 'kasus', 'case', 'sla')) return ansIncidents();
+  if (has(q, 'siem', 'cluster', 'agen', 'agent', 'pipeline', 'eps', 'ingest', 'kesehatan', 'health', 'sumber log')) return ansSiem();
+  if (has(q, 'ioc', 'intel', 'reputasi', 'feed', 'ancaman', 'threat')) return ansIntel();
+  if (has(q, 'playbook', 'otomasi', 'automation', 'workflow')) return ansAutomation();
+  if (has(q, 'pengguna', 'user', 'mfa', 'rbac', 'akses', 'integrasi', 'audit')) return ansAdmin();
+  if (has(q, 'risiko', 'risk', 'investigasi')) return ansAi();
+  if (has(q, 'alert', 'antrean', 'triage', 'ditugaskan', 'assign')) return ansAlerts();
+  if (has(q, 'halo', 'hai', 'help', 'bantu', 'bisa apa', 'apa saja') || q.trim().length < 3) return ansHelp();
+  return [
+    {p: 'Maaf, saya belum bisa menjawab itu. Sebagai simulasi, saya hanya memahami pertanyaan tentang data di dashboard ini.'},
+    {p: 'Coba sebutkan ID (INC-…, ALR-…, CASE-…), alamat IP atau domain, atau tanyakan soal insiden kritis, false positive, persetujuan, atau kesehatan SIEM.'},
+  ];
+}
+
+// Swap this for a real backend call later; keep the same block format in the reply.
+function askAssistant(text) {
+  return new Promise((resolve) => setTimeout(() => resolve(answer(text)), 450 + Math.random() * 350));
+}
+
+const chatLog = $('chat-log');
+const chatInput = $('chat-input');
+const chatOverlay = () => window.matchMedia('(max-width: 1100px)').matches;
+
+function goView(view) {
+  try { history.replaceState(null, '', '#' + view); } catch (e) {}
+  showView(view);
+}
+
+function addMsg(who, blocks) {
+  const m = el('div', 'msg ' + who, null, chatLog);
+  if (typeof blocks === 'string') el('p', null, blocks, m);
+  else blocks.forEach((b) => {
+    if (b.p) el('p', null, b.p, m);
+    if (b.ul && b.ul.length) {
+      const ul = el('ul', null, null, m);
+      b.ul.forEach((t) => el('li', null, t, ul));
+    }
+    if (b.go) {
+      const w = el('div', 'msg-links', null, m);
+      b.go.forEach((g) => {
+        const btn = el('button', 'msg-link', g.label || 'Buka ' + VIEW_NAME[g.view], w);
+        btn.type = 'button';
+        btn.addEventListener('click', () => {
+          goView(g.view);
+          if (g.then) g.then();
+          if (chatOverlay()) setChat(false);
+        });
+      });
+    }
+  });
+  chatLog.scrollTop = chatLog.scrollHeight;
+  return m;
+}
+
+let chatBusy = false;
+async function sendChat(text) {
+  text = text.trim();
+  if (!text || chatBusy) return;
+  chatBusy = true;
+  $('chat-send').disabled = true;
+  addMsg('user', text);
+  chatInput.value = '';
+  chatInput.style.height = '';
+  const dots = el('div', 'msg bot typing', null, chatLog);
+  dots.setAttribute('aria-label', 'Asisten sedang mengetik');
+  for (let i = 0; i < 3; i++) el('span', null, null, dots);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  try {
+    const reply = await askAssistant(text);
+    dots.remove();
+    addMsg('bot', reply);
+  } catch (e) {
+    dots.remove();
+    addMsg('bot', 'Maaf, terjadi kesalahan saat menyusun jawaban.');
+  }
+  chatBusy = false;
+  $('chat-send').disabled = false;
+}
+
+function setChat(open, focus) {
+  document.querySelector('.app').classList.toggle('chat-open', open);
+  $('chat-toggle').hidden = open;
+  $('chat-toggle').setAttribute('aria-expanded', String(open));
+  if (open && focus) chatInput.focus();
+  if (!open && focus) $('chat-toggle').focus();
+  drawCharts();
+}
+
+function resetChat() {
+  chatLog.replaceChildren();
+  addMsg('bot', ansHelp());
+}
+
+function initChat() {
+  ['Ringkas kondisi SOC', 'Insiden kritis apa saja?', 'Alert mana yang diduga false positive?', 'Cek 185.220.101.47', 'Apa yang menunggu persetujuan?', 'Bagaimana kesehatan SIEM?', 'Jelaskan halaman ini'].forEach((t) => {
+    const b = el('button', null, t, $('chat-chips'));
+    b.type = 'button';
+    b.addEventListener('click', () => sendChat(t));
+  });
+  $('chat-form').addEventListener('submit', (ev) => { ev.preventDefault(); sendChat(chatInput.value); });
+  chatInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); sendChat(chatInput.value); }
+  });
+  chatInput.addEventListener('input', () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = chatInput.scrollHeight + 'px';
+  });
+  const remember = (open) => { try { localStorage.setItem('socChatOpen', open ? '1' : '0'); } catch (e) {} };
+  $('chat-toggle').addEventListener('click', () => { setChat(true, true); remember(true); });
+  $('chat-close').addEventListener('click', () => { setChat(false, true); remember(false); });
+  $('chat-clear').addEventListener('click', resetChat);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && chatOverlay() && document.querySelector('.app').classList.contains('chat-open')) setChat(false, true);
+  });
+  resetChat();
+  // Open by default only where there is room to dock it; otherwise keep the viewer's last choice.
+  let saved = null;
+  try { saved = localStorage.getItem('socChatOpen'); } catch (e) {}
+  setChat(saved ? saved === '1' : window.innerWidth >= 1440, false);
+}
+
 drawOverview();
 alertStats();
 drawAlerts();
@@ -2424,6 +2906,7 @@ drawSiem();
 drawAdmin();
 drawAudit();
 showView();
+initChat();
 
 // ---- Background: live threat map (dotted world map + animated attack arcs) ----
 (function threatMap() {

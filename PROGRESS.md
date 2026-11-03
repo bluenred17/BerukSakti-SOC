@@ -121,6 +121,7 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 - [x] **5. Incident Management**: tabel kasus dengan SLA (lewat SLA merah), timeline investigasi per kasus (klik baris), tabel insiden yang bisa dicari dan diurutkan. Diuji: klik kasus mengganti timeline.
 - [x] **6. Automation Center**: tombol Setujui/Tolak aksi, **antrean persetujuan tuning rule** dari FP Classifier (exception/ubah kondisi, masa berlaku, dasar usulan; exception dengan wildcard ditandai "cakupan luas"), playbook dengan toggle aktif, riwayat eksekusi. Diuji: menyetujui APR-311 menurunkan badge dan mengubah status eksekusi menjadi Running; menyetujui TUN-042 menurunkan badge 6 → 5 dan tercatat di audit log.
 - [x] **7. SIEM Health**: status cluster (Green/Yellow/Red), CPU/heap/disk tiap node, ingestion per sumber log, status agen, error pipeline.
+- [x] **Asisten SOC (chatbox kanan, simulasi)**: panel di sisi kanan yang bisa dibuka/tutup (tombol "Tanya AI"); menempel di kanan pada layar ≥ 1100 px, menutupi halaman pada layar sempit. Menjawab dari objek `DATA`: ringkasan kondisi SOC, detail ID (`INC-`, `ALR-`, `CASE-`, `APR-`, `TUN-`), reputasi IOC (IP/domain/hash), insiden kritis & SLA, alert belum ditugaskan, false positive, rule berisik & tuning, persetujuan, kesehatan SIEM, playbook, KPI, admin, dan "jelaskan halaman ini". Jawaban punya tombol yang membuka modul terkait (mis. timeline kasus, Lookup IOC). Pertanyaan di luar data ditolak dengan jelas. Diuji: 18 jenis pertanyaan, tombol navigasi, tampilan desktop 1440 px dan HP, tanpa error console.
 - [x] **8. Administration**: tabel pengguna (MFA, status), matriks RBAC, integrasi dengan toggle, audit log yang ikut mencatat perubahan di halaman. Diuji: audit log bertambah setelah penugasan dan persetujuan.
 
 ### Deploy
@@ -133,6 +134,7 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 ## 5. Fitur yang belum selesai
 
 - [ ] **Data asli**: semua angka, nama, IOC, dan hasil "AI" adalah data contoh yang ditulis langsung di objek `DATA`. Belum terhubung ke SIEM, EDR, feed intelijen, atau model AI sungguhan.
+- [ ] **Asisten SOC dengan AI sungguhan**: chatbox masih simulasi berbasis kata kunci. Untuk memakai model sungguhan, `askAssistant()` diganti dengan panggilan ke backend (mis. `/api/chat` yang memanggil Claude API dengan API key di environment variable Vercel), setelah dashboard punya login dan pembatas pemakaian.
 - [ ] **Pipeline SOC Automation** dari laporan orkestrasi belum dibangun: orchestrator (n8n/Python), dedup & grouping, enrichment ES|QL, pre-filter deterministik, panggilan LLM, validasi skema, dan penulisan tag balik ke Elastic. Dashboard baru menampilkan bentuk hasilnya.
 - [ ] **Fase 0–1 roadmap** (analisis FP 30–90 hari, golden set berlabel) belum dikerjakan; angka fase, kesesuaian, dan golden set di dashboard adalah contoh.
 - [ ] **Keputusan terbuka dari laporan**: volume alert per hari, jumlah analis, versi/lisensi Elastic, pilihan model LLM (cloud atau self-hosted), kebijakan privasi data.
@@ -175,6 +177,7 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 11. **Data AI mengikuti skema JSON FP Classifier dari laporan orkestrasi**, supaya output LLM nanti bisa ditampilkan tanpa diubah. Field tambahan (`risk`, `asset_critical`, `correlated`, `next_steps`) diperlakukan sebagai hasil enrichment pipeline, bukan output LLM.
 12. **Aturan keputusan dan fail-safe dijalankan di dashboard (`decide_ai`)**, bukan dipercaya dari LLM: output tidak valid atau tanpa bukti selalu jadi `needs-review`. Di backend nanti aturan yang sama harus diterapkan sebelum tag ditulis ke Elastic.
 13. **Tuning rule selalu lewat persetujuan manusia**, dan exception yang memakai wildcard ditandai agar ditinjau ulang (prinsip "exception sempit + masa berlaku" dari laporan).
+14. **Asisten SOC dibuat simulasi dulu** (dipilih pengguna): tanpa API key dan biaya, aman selama dashboard publik. Semua jawaban lewat satu fungsi `askAssistant(text)` yang mengembalikan blok `{p}`, `{ul}`, `{go}`, sehingga backend AI nanti cukup mengembalikan format yang sama. Status buka/tutup panel diingat per browser di `localStorage`.
 
 ---
 
