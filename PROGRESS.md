@@ -1,6 +1,6 @@
 # PROGRESS — BerukSakti
 
-Rangkuman status proyek per 3 November 2026, sampai penambahan data publik EuRepoC (lanskap ancaman global).
+Rangkuman status proyek per 3 November 2026, sampai penambahan data publik UNSW-NB15 (trafik IDS) dan EuRepoC (lanskap ancaman global).
 
 - Repo: https://github.com/bluenred17/BerukSakti-SOC (branch `master`)
 - Website: https://beruksakti-soc.vercel.app
@@ -61,13 +61,14 @@ D:\Project\aibuilder\
 ├── vercel.json            # Konfigurasi Vercel: cleanUrls + rewrite "/" ke halaman pencarian
 ├── .gitignore             # Mengecualikan raw/ dan .claude/launch.json
 ├── data/
-│   └── eurepoc.js         # Ringkasan EuRepoC (hasil build, ±30 KB)
+│   ├── eurepoc.js         # Ringkasan EuRepoC (hasil build, ±30 KB)
+│   └── unsw-nb15.js       # Ringkasan UNSW-NB15 (hasil build, ±15 KB)
 ├── scripts/
 │   ├── build-data.js      # Mengolah raw/ menjadi data/
 │   └── lib/csv.js         # Pembaca CSV sederhana
 └── raw/                   # Dataset mentah, TIDAK masuk Git
     ├── eurepoc/           # eurepoc_global_dataset_1_3.csv, eurepoc_codebook_1_2.pdf
-    └── unsw-nb15/         # (kosong, menunggu diunduh pengguna)
+    └── unsw-nb15/         # UNSW-NB15_1.csv (±161 MB), NUSW-NB15_features.csv (diunduh pengguna)
 ```
 
 Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
@@ -84,7 +85,8 @@ Setiap halaman berdiri sendiri dalam satu file (HTML, CSS, dan JS jadi satu).
 | `README.md` | Penjelasan proyek (masih versi lama) | — |
 | `PROGRESS.md` | Rangkuman progres ini | — |
 | `multi-agent-orchestration-report.md` | Rancangan SOC Automation: pipeline Elastic → LLM FP Classifier, skema JSON, aturan keputusan, roadmap 5 fase (dibuat pengguna, belum di-commit) | ±130 baris |
-| `scripts/build-data.js` | Mengolah dataset publik di `raw/` menjadi ringkasan di `data/`; bagian UNSW-NB15 masih kerangka | ±170 baris |
+| `scripts/build-data.js` | Mengolah dataset publik di `raw/` menjadi ringkasan di `data/` (EuRepoC dan UNSW-NB15; file UNSW 161 MB dibaca baris per baris, ±3 detik) | ±270 baris |
+| `data/unsw-nb15.js` | Ringkasan UNSW-NB15_1: total flow, kategori serangan + severity, timeline per 10 menit, penyerang/sasaran/layanan teratas, 60 kelompok alert | ±15 KB |
 | `scripts/lib/csv.js` | Pembaca CSV (kutip, baris baru di dalam kutip) | ±40 baris |
 | `data/eurepoc.js` | Ringkasan EuRepoC: total, per tahun, negara, pelaku, sektor, MITRE, 40 insiden terbaru, 23 insiden Indonesia | ±30 KB |
 | `.gitignore` | `raw/`, `.claude/launch.json` | 2 baris |
@@ -135,6 +137,7 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 - [x] **2. Alert Management**: antrean 14 alert, filter (cari, severity, status, analis), ubah analis dan status triage langsung di tabel, kolom **Label AI** (`ai-triage:fp-suspected` / `tp-likely` / `needs-review`). Diuji: penugasan menurunkan badge 5 → 4; filter Critical menampilkan 3 baris; 3 alert punya label AI sesuai aturan keputusan.
 - [x] **3. AI Investigation** (mengikuti laporan orkestrasi): data FP Classifier memakai skema JSON laporan (`verdict`, `confidence`, `reasoning`, `evidence`, `recommended_action`, `tuning_suggestion`); **aturan keputusan** (label FP hanya bila confidence ≥ 0,9, ada bukti, dan aset non-kritikal; selain itu eskalasi); **fail-safe** (output tidak valid atau tanpa bukti selalu dieskalasi); 5 KPI (diduga FP, dieskalasi, kesesuaian dengan analis, miss rate, golden set); roadmap 5 fase dengan fase berjalan "Mode bayangan"; daftar skor risiko dengan kolom ID, nama, bar, dan angka yang sejajar di semua baris; kartu per alert/insiden berisi alasan, bukti berupa field log, korelasi log, rekomendasi, usulan tuning, dan output JSON. Diuji: 7 investigasi menghasilkan 2 label FP dan 5 eskalasi (1 karena fail-safe pada ALR-90411 yang tanpa bukti).
 - [x] **4. Threat Intelligence**: lookup IOC dengan deteksi tipe (IPv4, domain, MD5/SHA-1/SHA-256), hasil reputasi dan enrichment (skor, negara, ASN, tag, insiden terkait), tabel feed, tabel IOC yang bisa diklik. Diuji: IOC dikenal, IP tidak dikenal, dan format salah.
+- [x] **Trafik IDS (data nyata UNSW-NB15)**: di SOC Overview, bagian "Serangan jaringan terdeteksi IDS" dengan 4 KPI (700.001 flow, 22.215 flow serangan = 3,2%, 2.871 alert setelah dedup, 4 IP penyerang ke 10 host), grafik flow serangan per 10 menit ditumpuk menurut severity (tooltip per kategori), tabel 9 kategori serangan dengan severity, dan tabel penyerang/sasaran/layanan. Di Alert Management, tabel "Alert IDS dari trafik nyata": 60 kelompok alert (kategori + sumber + tujuan + layanan) dengan filter severity, jumlah flow, dan waktu pertama/terakhir. Asisten SOC bisa menjawab "serangan jaringan / IDS". Diuji lewat server lokal (desktop dan HP, tanpa error console).
 - [x] **Lanskap ancaman global (data nyata EuRepoC)** di Threat Intelligence: 5 KPI (3.414 insiden 2000–2024, 700 pada 2024, 1.014 terkait aktor negara, 502 ransomware dengan 98 memakai zero-day, 23 menyasar Indonesia), grafik insiden per tahun dengan tooltip jenis insiden, negara sasaran, asal pelaku dan kategori pelaku, sektor sasaran, teknik MITRE initial access/impact, daftar insiden (40 terbaru global atau 23 insiden Indonesia), dan atribusi sumber + lisensi. Bagian ini tersembunyi otomatis kalau `data/eurepoc.js` tidak ada. Asisten SOC bisa menjawab "lanskap ancaman global" dan "serangan ke Indonesia". Diuji lewat server lokal (desktop dan HP, tanpa error console).
 - [x] **5. Incident Management**: tabel kasus dengan SLA (lewat SLA merah), timeline investigasi per kasus (klik baris), tabel insiden yang bisa dicari dan diurutkan. Diuji: klik kasus mengganti timeline.
 - [x] **6. Automation Center**: tombol Setujui/Tolak aksi, **antrean persetujuan tuning rule** dari FP Classifier (exception/ubah kondisi, masa berlaku, dasar usulan; exception dengan wildcard ditandai "cakupan luas"), playbook dengan toggle aktif, riwayat eksekusi. Diuji: menyetujui APR-311 menurunkan badge dan mengubah status eksekusi menjadi Running; menyetujui TUN-042 menurunkan badge 6 → 5 dan tercatat di audit log.
@@ -151,8 +154,8 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 
 ## 5. Fitur yang belum selesai
 
-- [ ] **Data asli**: selain lanskap ancaman global (EuRepoC), semua angka, nama, IOC, dan hasil "AI" adalah data contoh yang ditulis langsung di objek `DATA`. Belum terhubung ke SIEM, EDR, feed intelijen, atau model AI sungguhan.
-- [ ] **UNSW-NB15** belum dipakai: menunggu pengguna mengunduh dari SharePoint UNSW (disarankan `UNSW-NB15_1.csv` + `UNSW-NB15_features.csv`, karena training/testing set tidak punya kolom waktu dan IP) ke `raw/unsw-nb15/`. Rencana: alert dan tren di SOC Overview/Alert Management, dengan tanggal digeser ke 14 hari terakhir dan diberi keterangan sumber.
+- [ ] **Data asli milik SOC sendiri**: selain bagian trafik IDS (UNSW-NB15) dan lanskap ancaman global (EuRepoC), semua angka, nama, IOC, dan hasil "AI" adalah data contoh di objek `DATA`. Belum terhubung ke SIEM, EDR, feed intelijen, atau model AI sungguhan. Kedua dataset publik juga bukan data jaringan kita.
+- [ ] **UNSW-NB15 baru file pertama** (`UNSW-NB15_1.csv`, ±2 jam serangan). File `_2` sampai `_4` bisa ditambahkan ke `raw/unsw-nb15/` dan otomatis ikut diolah. Data UNSW belum disambungkan ke antrean alert utama, AI Investigation, atau Asisten selain ringkasannya.
 - [ ] **Asisten SOC dengan AI sungguhan**: chatbox masih simulasi berbasis kata kunci. Untuk memakai model sungguhan, `askAssistant()` diganti dengan panggilan ke backend (mis. `/api/chat` yang memanggil Claude API dengan API key di environment variable Vercel), setelah dashboard punya login dan pembatas pemakaian.
 - [ ] **Pipeline SOC Automation** dari laporan orkestrasi belum dibangun: orchestrator (n8n/Python), dedup & grouping, enrichment ES|QL, pre-filter deterministik, panggilan LLM, validasi skema, dan penulisan tag balik ke Elastic. Dashboard baru menampilkan bentuk hasilnya.
 - [ ] **Fase 0–1 roadmap** (analisis FP 30–90 hari, golden set berlabel) belum dikerjakan; angka fase, kesesuaian, dan golden set di dashboard adalah contoh.
@@ -172,7 +175,7 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 | Kendala | Dampak | Status |
 |---|---|---|
 | `README.md` masih menjelaskan versi lama halaman pencarian (gaya Google, tombol "Saya Lagi Beruntung", "Chat with AI") dan tidak menyebut dashboard maupun Vercel. | Dokumentasi menyesatkan. | Belum diperbaiki |
-| Pratinjau `data:` URL di browser pane aplikasi Claude tidak bisa memuat `data/eurepoc.js` (path relatif). | Lanskap ancaman global tidak muncul di pratinjau itu. Uji lewat server lokal (`.claude/launch.json`, port 8137) atau Vercel. Membuka file langsung dengan klik dua kali tetap jalan. | Dibiarkan, cara uji dicatat |
+| Pratinjau `data:` URL di browser pane aplikasi Claude tidak bisa memuat `data/*.js` (path relatif). | Trafik IDS dan lanskap ancaman global tidak muncul di pratinjau itu. Uji lewat server lokal (`.claude/launch.json`, port 8137) atau Vercel. Membuka file langsung dengan klik dua kali tetap jalan. | Dibiarkan, cara uji dicatat |
 | Lisensi dataset non-komersial (EuRepoC CC BY-NC 4.0; UNSW-NB15 hanya untuk riset akademik). | BerukSakti harus tetap proyek non-komersial (sudah dikonfirmasi pengguna) dan sumber wajib dicantumkan. | Dipatuhi |
 | Dashboard publik tanpa login. | Aman selama datanya contoh. Tidak boleh diisi data SIEM asli sebelum ada autentikasi. | Kendala desain |
 | Di pratinjau `data:` URL (browser pane aplikasi Claude) hash URL tidak bisa berubah. | Navigasi lewat hash tidak jalan di pratinjau. Sudah diatasi: klik sidebar langsung mengganti modul. Di Vercel normal. | Sudah ditangani |
@@ -199,7 +202,8 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 12. **Aturan keputusan dan fail-safe dijalankan di dashboard (`decide_ai`)**, bukan dipercaya dari LLM: output tidak valid atau tanpa bukti selalu jadi `needs-review`. Di backend nanti aturan yang sama harus diterapkan sebelum tag ditulis ke Elastic.
 13. **Tuning rule selalu lewat persetujuan manusia**, dan exception yang memakai wildcard ditandai agar ditinjau ulang (prinsip "exception sempit + masa berlaku" dari laporan).
 14. **Asisten SOC dibuat simulasi dulu** (dipilih pengguna): tanpa API key dan biaya, aman selama dashboard publik. Semua jawaban lewat satu fungsi `askAssistant(text)` yang mengembalikan blok `{p}`, `{ul}`, `{go}`, sehingga backend AI nanti cukup mengembalikan format yang sama. Status buka/tutup panel diingat per browser di `localStorage`.
-15. **Data publik diolah offline, bukan dimuat mentah**: dataset mentah disimpan di `raw/` (di luar Git), diringkas oleh `scripts/build-data.js` menjadi `data/*.js` (`window.EUREPOC = {...}`) yang kecil. Dimuat dengan `<script src>` (bukan `fetch`) supaya tetap jalan saat file dibuka langsung. Setiap data publik wajib menampilkan sumber dan lisensinya, dan dibedakan jelas dari data SOC contoh.
+15. **Data publik diolah offline, bukan dimuat mentah**: dataset mentah disimpan di `raw/` (di luar Git), diringkas oleh `scripts/build-data.js` menjadi `data/*.js` (`window.EUREPOC`, `window.UNSW`) yang kecil. Dimuat dengan `<script src>` (bukan `fetch`) supaya tetap jalan saat file dibuka langsung. Setiap data publik wajib menampilkan sumber dan lisensinya, dan dibedakan jelas dari data SOC contoh. Bagian yang datanya tidak ada akan tersembunyi otomatis.
+16. **Waktu UNSW-NB15 tidak digeser** (berbeda dari rencana awal): serangan di file pertama hanya berlangsung ±2 jam pada 22 Januari 2015, jadi ditampilkan dengan waktu aslinya per 10 menit agar tidak menyesatkan. Alert UNSW dikelompokkan seperti SIEM (kategori + sumber + tujuan + layanan, mengikuti prinsip dedup di laporan orkestrasi); severity per kategori adalah pemetaan kita sendiri (Backdoor/Shellcode/Worm = Critical, Exploit/DoS = High, Recon/Fuzzer/Analysis = Medium, Generic = Low).
 
 ---
 
@@ -207,15 +211,14 @@ Pengujian dilakukan di browser pane aplikasi Claude (ukuran desktop 1280×800 da
 
 Urutan yang disarankan:
 
-1. **Olah UNSW-NB15** begitu file ada di `raw/unsw-nb15/`: lengkapi `buildUnsw()` di `scripts/build-data.js`, hasilkan `data/unsw-nb15.js`, lalu ganti data contoh tren dan antrean alert dengan data itu (tanggal digeser, sumber dicantumkan).
-2. **Perbarui `README.md`**: jelaskan kedua halaman, URL Vercel, cara deploy, cara menjalankan `node scripts/build-data.js`, dan sumber data.
-3. **Jawab keputusan terbuka dari laporan orkestrasi** (volume alert, jumlah analis, versi Elastic, model LLM, kebijakan privasi), lalu jalankan **Fase 0**: ekspor alert 30–90 hari dari Elastic, hitung Top 10 rule paling berisik, dan catat baseline FP rate, waktu analis, MTTD/MTTR. Hasilnya menggantikan data contoh di SOC Overview.
-4. **Tambahkan autentikasi** sebelum data asli masuk (mis. Vercel Password Protection, SSO, atau login sendiri), lalu terapkan RBAC yang sudah ada di modul Administration.
-5. **Bangun pipeline FP Classifier** (n8n/Python di server sendiri, bukan di Vercel) sesuai laporan: dedup, enrichment, pre-filter, LLM dengan output JSON tervalidasi, aturan keputusan + fail-safe yang sama dengan `decide_ai`, lalu backend kecil yang menyediakan hasilnya ke dashboard dalam bentuk objek `DATA`.
-6. **Sambungkan Asisten SOC ke AI sungguhan** setelah login ada: endpoint backend (mis. Vercel Serverless Function `/api/chat`) yang memanggil Claude API dengan API key di environment variable Vercel, diberi konteks data dashboard, dibatasi pemakaiannya, lalu `askAssistant()` diarahkan ke endpoint itu dengan format blok yang sama.
-7. **Simpan perubahan pengguna** (penugasan, status triage, persetujuan aksi dan tuning, toggle, audit log) ke database lewat backend.
-8. **Sambungkan aksi nyata**: lookup IOC ke API reputasi, persetujuan aksi ke mesin SOAR/playbook, persetujuan tuning ke exception rule di Elastic, toggle integrasi ke konfigurasi asli.
-9. **Refresh data otomatis** (polling berkala) dan tampilkan waktu pembaruan terakhir.
-10. **Lengkapi halaman pencarian**: tujuan untuk menu Pustaka (mis. riwayat pencarian) dan link footer.
-11. **Pertimbangkan memecah `soc-monitoring.html`** (±3.130 baris) menjadi file CSS/JS/data terpisah begitu mulai terhubung ke API.
-12. **Opsional**: commit `multi-agent-orchestration-report.md` ke repo sebagai dokumen desain; aktifkan 2FA di akun Vercel; ganti nama branch ke `main` bila diinginkan.
+1. **Perbarui `README.md`**: jelaskan kedua halaman, URL Vercel, cara deploy, cara menjalankan `node scripts/build-data.js`, dan sumber data.
+2. **Jawab keputusan terbuka dari laporan orkestrasi** (volume alert, jumlah analis, versi Elastic, model LLM, kebijakan privasi), lalu jalankan **Fase 0**: ekspor alert 30–90 hari dari Elastic, hitung Top 10 rule paling berisik, dan catat baseline FP rate, waktu analis, MTTD/MTTR. Hasilnya menggantikan data contoh di SOC Overview.
+3. **Tambahkan autentikasi** sebelum data asli masuk (mis. Vercel Password Protection, SSO, atau login sendiri), lalu terapkan RBAC yang sudah ada di modul Administration.
+4. **Bangun pipeline FP Classifier** (n8n/Python di server sendiri, bukan di Vercel) sesuai laporan: dedup, enrichment, pre-filter, LLM dengan output JSON tervalidasi, aturan keputusan + fail-safe yang sama dengan `decide_ai`, lalu backend kecil yang menyediakan hasilnya ke dashboard dalam bentuk objek `DATA`.
+5. **Sambungkan Asisten SOC ke AI sungguhan** setelah login ada: endpoint backend (mis. Vercel Serverless Function `/api/chat`) yang memanggil Claude API dengan API key di environment variable Vercel, diberi konteks data dashboard, dibatasi pemakaiannya, lalu `askAssistant()` diarahkan ke endpoint itu dengan format blok yang sama.
+6. **Simpan perubahan pengguna** (penugasan, status triage, persetujuan aksi dan tuning, toggle, audit log) ke database lewat backend.
+7. **Sambungkan aksi nyata**: lookup IOC ke API reputasi, persetujuan aksi ke mesin SOAR/playbook, persetujuan tuning ke exception rule di Elastic, toggle integrasi ke konfigurasi asli.
+8. **Refresh data otomatis** (polling berkala) dan tampilkan waktu pembaruan terakhir.
+9. **Lengkapi halaman pencarian**: tujuan untuk menu Pustaka (mis. riwayat pencarian) dan link footer.
+10. **Pertimbangkan memecah `soc-monitoring.html`** (±3.130 baris) menjadi file CSS/JS/data terpisah begitu mulai terhubung ke API.
+11. **Opsional**: commit `multi-agent-orchestration-report.md` ke repo sebagai dokumen desain; aktifkan 2FA di akun Vercel; ganti nama branch ke `main` bila diinginkan.

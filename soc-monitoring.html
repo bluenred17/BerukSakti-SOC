@@ -363,7 +363,7 @@ body::after {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
     Administration
   </a>
-  <p class="side-note">Data SOC adalah contoh untuk ilustrasi, per 2 November 2026, bukan data SIEM asli. Lanskap ancaman global di Threat Intelligence memakai data publik EuRepoC (CC BY-NC 4.0).</p>
+  <p class="side-note">Data SOC adalah contoh untuk ilustrasi, per 2 November 2026, bukan data SIEM asli. Bagian berlabel UNSW-NB15 (trafik IDS) dan EuRepoC (lanskap ancaman global) memakai data publik untuk riset non-komersial.</p>
 </nav>
 
 <main class="soc">
@@ -485,6 +485,68 @@ body::after {
       </div>
     </section>
   </div>
+
+  <div class="soc-grid" id="ids-section">
+    <section class="soc-card soc-wide">
+      <h2>Serangan jaringan terdeteksi IDS</h2>
+      <p class="soc-card-note" id="ids-note">Trafik jaringan nyata berlabel dari dataset UNSW-NB15 (lab uji, direkam 22 Januari 2015). Ini contoh pola serangan, bukan trafik jaringan kita.</p>
+      <div class="soc-tiles">
+        <div class="soc-tile">
+          <span class="soc-tile-label">Flow jaringan</span>
+          <span class="soc-tile-value" id="ids-flows">—</span>
+          <span class="soc-tile-sub" id="ids-window">—</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Flow serangan</span>
+          <span class="soc-tile-value" id="ids-attacks">—</span>
+          <span class="soc-tile-sub"><b id="ids-share">—</b> dari semua flow</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Alert setelah dedup</span>
+          <span class="soc-tile-value" id="ids-groups">—</span>
+          <span class="soc-tile-sub">kategori + sumber + tujuan + layanan</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Sumber penyerang</span>
+          <span class="soc-tile-value" id="ids-srcs">—</span>
+          <span class="soc-tile-sub">menyasar <b id="ids-dsts">—</b> host</span>
+        </div>
+      </div>
+      <ul class="soc-legend">
+        <li><span class="soc-sw" style="background:var(--critical)"></span>Critical</li>
+        <li><span class="soc-sw" style="background:var(--high)"></span>High</li>
+        <li><span class="soc-sw" style="background:var(--accent)"></span>Medium</li>
+        <li><span class="soc-sw" style="background:var(--muted-bar)"></span>Low</li>
+      </ul>
+      <div class="soc-chart" id="chart-ids"></div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Kategori serangan</h2>
+      <p class="soc-card-note">Severity per kategori adalah pemetaan triage kita, bukan bagian dari dataset.</p>
+      <table class="soc-table">
+        <thead><tr><th>Kategori</th><th>Severity</th><th class="soc-num">Flow</th><th class="soc-num">Porsi</th></tr></thead>
+        <tbody id="tb-ids-cats"></tbody>
+      </table>
+    </section>
+
+    <section class="soc-card">
+      <h2>Penyerang, sasaran, dan layanan</h2>
+      <p class="soc-card-note">IP dari jaringan lab UNSW (175.45.176.0/24 penyerang, 149.171.126.0/24 sasaran).</p>
+      <table class="soc-table">
+        <thead><tr><th>IP sumber</th><th class="soc-num">Flow serangan</th></tr></thead>
+        <tbody id="tb-ids-src"></tbody>
+      </table>
+      <table class="soc-table">
+        <thead><tr><th>IP sasaran</th><th class="soc-num">Flow serangan</th></tr></thead>
+        <tbody id="tb-ids-dst"></tbody>
+      </table>
+      <table class="soc-table">
+        <thead><tr><th>Layanan / port</th><th class="soc-num">Flow serangan</th></tr></thead>
+        <tbody id="tb-ids-svc"></tbody>
+      </table>
+    </section>
+  </div>
 </section>
 
 <!-- 2. Alert Management -->
@@ -561,6 +623,38 @@ body::after {
         </table>
       </div>
       <p class="soc-card-note" id="am-nomatch" hidden>Tidak ada alert yang cocok dengan filter.</p>
+    </section>
+  </div>
+
+  <div class="soc-grid" id="ids-alerts-section">
+    <section class="soc-card soc-wide">
+      <h2>Alert IDS dari trafik nyata</h2>
+      <p class="soc-card-note" id="ids-alerts-note">Flow serangan UNSW-NB15 yang dikelompokkan seperti SIEM (kategori + sumber + tujuan + layanan): semua kelompok Critical teratas ditambah kelompok terbesar lainnya. Waktu dalam UTC, 22 Januari 2015.</p>
+      <div class="soc-tools">
+        <select id="ids-sev" class="soc-select" aria-label="Filter severity alert IDS">
+          <option value="">Semua severity</option>
+          <option>Critical</option>
+          <option>High</option>
+          <option>Medium</option>
+          <option>Low</option>
+        </select>
+      </div>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>ID</th>
+            <th>Severity</th>
+            <th>Kategori</th>
+            <th>Sumber → tujuan</th>
+            <th class="soc-opt">Layanan</th>
+            <th class="soc-num">Flow</th>
+            <th class="soc-num soc-opt">Pertama</th>
+            <th class="soc-num">Terakhir</th>
+          </tr></thead>
+          <tbody id="tb-ids-alerts"></tbody>
+        </table>
+      </div>
+      <p class="soc-card-note" id="ids-source"></p>
     </section>
   </div>
 </section>
@@ -1151,6 +1245,7 @@ body::after {
 
 <!-- Summaries of public datasets, generated by scripts/build-data.js; the page still works without them -->
 <script src="data/eurepoc.js"></script>
+<script src="data/unsw-nb15.js"></script>
 <script>
 // ---- Data contoh (ganti dengan data SIEM Anda) ----
 const DATA = {
@@ -1940,6 +2035,135 @@ function drawOverview() {
   });
 }
 
+// ---- IDS traffic (UNSW-NB15, public dataset) ----
+const IDS = window.UNSW;
+const fmtUtc = (s) => new Date(s * 1000).toISOString().slice(11, 19);
+const sevKey = (s) => s.toLowerCase();
+
+function idsBySeverity(bin) {
+  const o = {critical: 0, high: 0, medium: 0, low: 0, total: 0};
+  IDS.categories.forEach((c) => {
+    const n = bin[c.key] || 0;
+    o[sevKey(c.severity)] += n;
+    o.total += n;
+  });
+  return o;
+}
+
+function drawIdsChart() {
+  if (!IDS) return;
+  const box = $('chart-ids');
+  const bins = IDS.timeline.map((b) => ({t: b.t, raw: b, ...idsBySeverity(b)}));
+  const W = Math.max(280, box.clientWidth);
+  const H = 240;
+  const svg = svgEl('svg', {width: '100%', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Flow serangan per 10 menit menurut severity'});
+  box.replaceChildren(svg);
+  const ticks = niceTicks(Math.max(...bins.map((b) => b.total)), 4);
+  const top = ticks[ticks.length - 1];
+  const m = {t: 8, r: 4, b: 24, l: 44};
+  const y = (v) => H - m.b - (v / top) * (H - m.b - m.t);
+  const step = (W - m.l - m.r) / bins.length;
+  const bw = Math.min(40, step * 0.7);
+  const xc = (i) => m.l + step * i + step / 2;
+  const axis = svgEl('g', {class: 'soc-axis'}, svg);
+  ticks.forEach((t) => {
+    svgEl('line', {x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), style: `stroke:${t === 0 ? 'var(--axis)' : 'var(--grid)'}`}, svg);
+    const tx = svgEl('text', {x: m.l - 8, y: y(t), dy: '0.32em', 'text-anchor': 'end'}, axis);
+    tx.textContent = fmtInt(t);
+  });
+  const every = Math.max(1, Math.ceil(44 / step));
+  const cols = bins.map((b, i) => {
+    if (i % every === 0) {
+      const tx = svgEl('text', {x: xc(i), y: H - 6, 'text-anchor': 'middle'}, axis);
+      tx.textContent = fmtUtc(b.t).slice(0, 5);
+    }
+    const g = svgEl('g', {}, svg);
+    let base = 0;
+    KEYS.forEach((k) => {
+      svgEl('rect', {x: xc(i) - bw / 2, width: bw, y: y(base + b[k]), height: Math.max(0, y(base) - y(base + b[k])), rx: 1, style: `fill:${SEV[k]}`}, g);
+      base += b[k];
+    });
+    return g;
+  });
+  const tip = makeTip(box);
+  bins.forEach((b, i) => {
+    const hit = svgEl('rect', {x: m.l + step * i, width: step, y: m.t, height: H - m.b - m.t, style: 'fill:transparent'}, svg);
+    const show = (ev) => {
+      cols.forEach((g, j) => { g.style.opacity = j === i ? 1 : 0.4; });
+      tipHead(tip, '22 Jan 2015, ' + fmtUtc(b.t).slice(0, 5) + '–' + fmtUtc(b.t + IDS.bin_seconds).slice(0, 5) + ' UTC');
+      IDS.categories.forEach((c) => { if (b.raw[c.key]) tipRow(tip, SEV[sevKey(c.severity)], c.name, fmtInt(b.raw[c.key])); });
+      tipRow(tip, null, 'Total flow serangan', fmtInt(b.total), 'soc-tip-total');
+      placeTip(box, tip, pointer(ev, box)[0], y(b.total) + 20);
+    };
+    hit.addEventListener('pointerenter', show);
+    hit.addEventListener('pointermove', show);
+    hit.addEventListener('pointerleave', () => { cols.forEach((g) => { g.style.opacity = 1; }); tip.hidden = true; });
+  });
+}
+
+function drawIdsAlerts() {
+  const sev = $('ids-sev').value;
+  const tb = $('tb-ids-alerts');
+  tb.replaceChildren();
+  IDS.alerts.filter((a) => !sev || a.severity === sev).forEach((a) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, a.id, 'soc-mono');
+    sevChip(tr, a.severity);
+    td(tr, a.name);
+    td(tr, a.src + ' → ' + a.dst, 'soc-mono');
+    td(tr, a.service, 'soc-opt soc-mono');
+    td(tr, fmtInt(a.count), 'soc-num');
+    td(tr, fmtUtc(a.first), 'soc-num soc-opt');
+    td(tr, fmtUtc(a.last), 'soc-num');
+  });
+}
+
+function drawIds() {
+  $('ids-section').hidden = !IDS;
+  $('ids-alerts-section').hidden = !IDS;
+  if (!IDS) return;
+  const t = IDS.totals;
+  $('ids-flows').textContent = fmtInt(t.flows);
+  $('ids-window').textContent = '22 Jan 2015, ' + fmtUtc(t.start).slice(0, 5) + '–' + fmtUtc(t.end).slice(0, 5) + ' UTC';
+  $('ids-attacks').textContent = fmtInt(t.attacks);
+  $('ids-share').textContent = fmtPct(t.attacks / t.flows, 1);
+  $('ids-groups').textContent = fmtInt(t.alert_groups);
+  $('ids-srcs').textContent = fmtInt(t.attack_sources);
+  $('ids-dsts').textContent = fmtInt(t.attack_targets);
+
+  const tc = $('tb-ids-cats');
+  tc.replaceChildren();
+  IDS.categories.forEach((c) => {
+    const tr = el('tr', null, null, tc);
+    td(tr, c.name);
+    sevChip(tr, c.severity);
+    td(tr, fmtInt(c.flows), 'soc-num');
+    td(tr, fmtPct(c.flows / t.attacks, 1), 'soc-num');
+  });
+  const list = (id, rows, key) => {
+    const tb = $(id);
+    tb.replaceChildren();
+    rows.forEach((r) => {
+      const tr = el('tr', null, null, tb);
+      td(tr, r[key], 'soc-mono');
+      td(tr, fmtInt(r.flows), 'soc-num');
+    });
+  };
+  list('tb-ids-src', IDS.top_sources, 'ip');
+  list('tb-ids-dst', IDS.top_targets.slice(0, 5), 'ip');
+  list('tb-ids-svc', IDS.top_services.slice(0, 5), 'service');
+
+  drawIdsAlerts();
+  const src = $('ids-source');
+  src.replaceChildren('Sumber: ' + IDS.source.citation + ' ' + IDS.source.license + '. ');
+  const a = el('a', null, IDS.source.url, src);
+  a.href = IDS.source.url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.style.color = 'var(--accent)';
+}
+$('ids-sev').addEventListener('input', drawIdsAlerts);
+
 // ---- 2. Alert Management ----
 const ALERT_STATUSES = ['New', 'In triage', 'Escalated', 'Closed - TP', 'Closed - FP'];
 const isClosed = (s) => s.startsWith('Closed');
@@ -2679,7 +2903,7 @@ const VIEWS = ['overview', 'alerts', 'ai', 'intel', 'incidents', 'automation', '
 
 // Charts measure their box, so only draw the ones on the visible module.
 function drawCharts() {
-  if (!$('view-overview').hidden) { drawVolume(); drawTactics(); }
+  if (!$('view-overview').hidden) { drawVolume(); drawTactics(); drawIdsChart(); }
   if (!$('view-intel').hidden) drawGlobalChart();
 }
 let resizeTimer;
@@ -2863,6 +3087,23 @@ function ansGlobal(q) {
   ];
 }
 
+function ansIds() {
+  if (!IDS) return [{p: 'Data trafik IDS (UNSW-NB15) belum dimuat di halaman ini.'}];
+  const t = IDS.totals;
+  const crit = IDS.alerts.filter((a) => a.severity === 'Critical').slice(0, 3);
+  return [
+    {p: 'Dari ' + fmtInt(t.flows) + ' flow jaringan di UNSW-NB15, ' + fmtInt(t.attacks) + ' (' + fmtPct(t.attacks / t.flows, 1) + ') adalah serangan, dikelompokkan menjadi ' + fmtInt(t.alert_groups) + ' alert.'},
+    {ul: [
+      'Kategori terbanyak: ' + IDS.categories.slice(0, 3).map((c) => c.name + ' (' + fmtInt(c.flows) + ')').join(', '),
+      'Penyerang paling aktif: ' + IDS.top_sources[0].ip + ' (' + fmtInt(IDS.top_sources[0].flows) + ' flow)',
+      'Sasaran paling sering: ' + IDS.top_targets[0].ip + ' (' + fmtInt(IDS.top_targets[0].flows) + ' flow)',
+      ...crit.map((a) => 'Critical ' + a.id + ': ' + a.name + ' ' + a.src + ' → ' + a.dst + ' (' + a.service + ', ' + fmtInt(a.count) + ' flow)'),
+    ]},
+    {p: 'Ini trafik lab uji tahun 2015, bukan jaringan kita.'},
+    {go: [{view: 'alerts', label: 'Lihat alert IDS', then: () => $('ids-alerts-section').scrollIntoView({block: 'start'})}, {view: 'overview', label: 'Lihat grafik serangan', then: () => $('ids-section').scrollIntoView({block: 'start'})}]},
+  ];
+}
+
 function ansAutomation() {
   const s = DATA.automation_stats;
   const failed = DATA.runs.filter((r) => r.status === 'Failed');
@@ -3009,6 +3250,7 @@ function answer(raw) {
   if (has(q, 'insiden', 'incident', 'kritis', 'critical', 'kasus', 'case', 'sla')) return ansIncidents();
   if (has(q, 'siem', 'cluster', 'agen', 'agent', 'pipeline', 'eps', 'ingest', 'kesehatan', 'health', 'sumber log')) return ansSiem();
   if (has(q, 'global', 'dunia', 'eurepoc', 'indonesia', 'lanskap')) return ansGlobal(q);
+  if (has(q, 'unsw', 'ids', 'trafik', 'serangan jaringan', 'penyerang')) return ansIds();
   if (has(q, 'ioc', 'intel', 'reputasi', 'feed', 'ancaman', 'threat')) return ansIntel();
   if (has(q, 'playbook', 'otomasi', 'automation', 'workflow')) return ansAutomation();
   if (has(q, 'pengguna', 'user', 'mfa', 'rbac', 'akses', 'integrasi', 'audit')) return ansAdmin();
@@ -3129,6 +3371,7 @@ function initChat() {
 }
 
 drawOverview();
+drawIds();
 alertStats();
 drawAlerts();
 drawAI();

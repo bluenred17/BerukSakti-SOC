@@ -129,12 +129,114 @@ function buildEurepoc() {
 }
 
 // ---- UNSW-NB15 ----
-function buildUnsw() {
+// The full-record files (UNSW-NB15_1..4.csv) have no header row; column names come from the
+// features file (spelled "NUSW-NB15_features.csv" in the official download).
+// Severity per attack category is our own SOC triage choice, not part of the dataset.
+const UNSW_SEVERITY = {
+  Backdoor: 'Critical', Shellcode: 'Critical', Worms: 'Critical',
+  Exploits: 'High', DoS: 'High',
+  Reconnaissance: 'Medium', Fuzzers: 'Medium', Analysis: 'Medium',
+  Generic: 'Low',
+};
+const UNSW_ID = {
+  Backdoor: 'Backdoor', Shellcode: 'Shellcode', Worms: 'Worm', Exploits: 'Eksploitasi kerentanan', DoS: 'Denial of Service',
+  Reconnaissance: 'Pengintaian / pemindaian', Fuzzers: 'Fuzzing', Analysis: 'Analisis (port scan, spam, HTML)', Generic: 'Serangan generik (cipher)',
+};
+const UNSW_BIN = 600;
+const unswCat = (v) => {
+  const c = v.trim();
+  return c === 'Backdoors' ? 'Backdoor' : c;
+};
+
+async function buildUnsw() {
   const dir = path.join(RAW, 'unsw-nb15');
-  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /\.csv$/i.test(f)) : [];
-  if (!files.length) { console.log('skip UNSW-NB15: no CSV in ' + dir); return; }
-  console.log('UNSW-NB15 files found: ' + files.join(', ') + ' (builder not written yet)');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  const featFile = files.find((f) => /features\.csv$/i.test(f));
+  const dataFiles = files.filter((f) => /^UNSW-NB15_\d\.csv$/i.test(f)).sort();
+  if (!featFile || !dataFiles.length) { console.log('skip UNSW-NB15: need *features.csv and UNSW-NB15_<n>.csv in ' + dir); return; }
+
+  const cols = readCsv(path.join(dir, featFile)).map((r) => r.Name.trim().toLowerCase().replace(/\s+/g, ''));
+  const ix = (name) => {
+    const i = cols.indexOf(name);
+    if (i < 0) throw new Error('UNSW-NB15 column missing: ' + name);
+    return i;
+  };
+  const C = {src: ix('srcip'), dst: ix('dstip'), dport: ix('dsport'), proto: ix('proto'), service: ix('service'), stime: ix('stime'), cat: ix('attack_cat'), label: ix('label')};
+
+  const readline = require('readline');
+  let flows = 0;
+  let attacks = 0;
+  let tMin = Infinity;
+  let tMax = -Infinity;
+  const cats = new Map();
+  const timeline = new Map();
+  const srcs = new Map();
+  const dsts = new Map();
+  const services = new Map();
+  const groups = new Map();
+  const inc = (m, k, n = 1) => m.set(k, (m.get(k) || 0) + n);
+
+  for (const f of dataFiles) {
+    const rl = readline.createInterface({input: fs.createReadStream(path.join(dir, f), 'utf8'), crlfDelay: Infinity});
+    for await (let line of rl) {
+      line = line.replace(/^﻿/, '');
+      if (!line) continue;
+      const v = line.split(',');
+      flows++;
+      const t = Number(v[C.stime]);
+      if (t) { tMin = Math.min(tMin, t); tMax = Math.max(tMax, t); }
+      if (v[C.label].trim() !== '1') continue;
+      attacks++;
+      const cat = unswCat(v[C.cat]) || 'Tidak berlabel';
+      inc(cats, cat);
+      // Attacks in UNSW-NB15_1 span about two hours, so bucket by 10 minutes
+      const bin = Math.floor(t / UNSW_BIN) * UNSW_BIN;
+      if (!timeline.has(bin)) timeline.set(bin, {});
+      const h = timeline.get(bin);
+      h[cat] = (h[cat] || 0) + 1;
+      inc(srcs, v[C.src]);
+      inc(dsts, v[C.dst]);
+      const svc = v[C.service] && v[C.service] !== '-' ? v[C.service] : v[C.proto] + '/' + v[C.dport];
+      inc(services, svc);
+      // Group like a SIEM would: same category, source, destination and service in one alert
+      const key = [cat, v[C.src], v[C.dst], svc].join('|');
+      const g = groups.get(key);
+      if (g) { g.count++; g.first = Math.min(g.first, t); g.last = Math.max(g.last, t); }
+      else groups.set(key, {category: cat, src: v[C.src], dst: v[C.dst], service: svc, count: 1, first: t, last: t});
+    }
+  }
+
+  const topN = (m, n, k = 'name') => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([name, count]) => ({[k]: name, flows: count}));
+  const sev = (c) => UNSW_SEVERITY[c] || 'Medium';
+  const rank = {Critical: 0, High: 1, Medium: 2, Low: 3};
+  const allGroups = [...groups.values()];
+  // Keep every critical group plus the largest of the rest, so the list stays small
+  const picked = [
+    ...allGroups.filter((g) => sev(g.category) === 'Critical').sort((a, b) => b.count - a.count).slice(0, 25),
+    ...allGroups.filter((g) => sev(g.category) !== 'Critical').sort((a, b) => b.count - a.count).slice(0, 35),
+  ].sort((a, b) => rank[sev(a.category)] - rank[sev(b.category)] || b.count - a.count)
+    .map((g, i) => ({id: 'IDS-' + String(i + 1).padStart(4, '0'), ...g, severity: sev(g.category), name: UNSW_ID[g.category] || g.category}));
+
+  writeData('unsw-nb15.js', 'UNSW', {
+    source: {
+      name: 'UNSW-NB15 (' + dataFiles.join(', ') + ')',
+      url: 'https://research.unsw.edu.au/projects/unsw-nb15-dataset',
+      license: 'Gratis untuk riset akademik; penggunaan komersial perlu izin penulis',
+      citation: 'Moustafa, N. & Slay, J. (2015). UNSW-NB15: a comprehensive data set for network intrusion detection systems. MilCIS 2015.',
+    },
+    severity_map: UNSW_SEVERITY,
+    totals: {flows, attacks, normal: flows - attacks, start: tMin, end: tMax, attack_sources: srcs.size, attack_targets: dsts.size, alert_groups: groups.size},
+    categories: [...cats.entries()].sort((a, b) => b[1] - a[1]).map(([name, n]) => ({key: name, name: UNSW_ID[name] || name, severity: sev(name), flows: n})),
+    bin_seconds: UNSW_BIN,
+    timeline: [...timeline.entries()].sort((a, b) => a[0] - b[0]).map(([t, c]) => ({t, ...c})),
+    top_sources: topN(srcs, 8, 'ip'),
+    top_targets: topN(dsts, 8, 'ip'),
+    top_services: topN(services, 8, 'service'),
+    alerts: picked,
+  });
 }
 
-buildEurepoc();
-buildUnsw();
+(async () => {
+  buildEurepoc();
+  await buildUnsw();
+})();
