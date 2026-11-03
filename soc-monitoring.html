@@ -216,6 +216,16 @@ body::after {
 .ai-card .corr { list-style: none; padding: 0; font-size: 13px; }
 .corr li { display: grid; grid-template-columns: 3.4em 4.8em minmax(0, 1fr); gap: 8px; }
 .corr-src { color: var(--muted); }
+.ai-evidence li { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.ai-json summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.ai-json pre { margin: 6px 0 0; max-height: 16rem; overflow: auto; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* AI Investigation: automation roadmap phases */
+.phases { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: 8px; }
+.phases li { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px; color: var(--muted); }
+.phases li b { color: var(--fg); font-weight: 600; }
+.phases li.done { border-color: rgba(76, 194, 135, .45); }
+.phases li.now { border-color: var(--accent); background: rgba(91, 157, 224, .12); }
+.phase-n { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 /* Incident Management: investigation timeline */
 .timeline { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 2px solid var(--line); display: grid; gap: 12px; }
 .timeline li { position: relative; display: grid; gap: 1px; }
@@ -390,6 +400,34 @@ body::after {
       <p class="soc-card-note">7 hari terakhir. Tiga taktik terbanyak disorot.</p>
       <div class="soc-chart" id="chart-tactics" style="min-height:272px"></div>
     </section>
+
+    <section class="soc-card">
+      <h2>Pengurangan false positive</h2>
+      <p class="soc-card-note">Metrik keberhasilan otomasi triage, 7 hari terakhir dibanding 7 hari sebelumnya.</p>
+      <table class="soc-table">
+        <thead><tr>
+          <th>Metrik</th>
+          <th class="soc-num">Nilai</th>
+          <th class="soc-num">Perubahan</th>
+        </tr></thead>
+        <tbody id="tb-fpm"></tbody>
+      </table>
+    </section>
+
+    <section class="soc-card">
+      <h2>Rule paling berisik</h2>
+      <p class="soc-card-note">Top 10 rule menurut jumlah alert 30 hari terakhir; mulai tuning dari sini.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Rule</th>
+            <th class="soc-num">Alert 30 hari</th>
+            <th class="soc-num">FP rate</th>
+          </tr></thead>
+          <tbody id="tb-noisy"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </section>
 
@@ -457,6 +495,7 @@ body::after {
             <th class="soc-num">Waktu</th>
             <th>Severity</th>
             <th>Rule</th>
+            <th>Label AI</th>
             <th class="soc-opt">Sumber</th>
             <th class="soc-opt">Aset</th>
             <th>Analis</th>
@@ -474,10 +513,44 @@ body::after {
 <section class="soc-view" id="view-ai" hidden>
   <header class="soc-head">
     <h1 class="soc-title">AI Investigation</h1>
-    <p class="soc-lede">AI menganalisis <b id="ai-count">—</b> insiden prioritas dan mengorelasikan <b id="ai-logs">—</b> event log; skor risiko tertinggi saat ini <b id="ai-top">—</b>. Hasilnya perlu diverifikasi analis sebelum ditindaklanjuti.</p>
+    <p class="soc-lede">FP Classifier menilai <b id="ai-count">—</b> alert dan insiden: <b id="ai-fp">—</b> diberi label diduga false positive dan <b id="ai-esc">—</b> dieskalasi ke analis. Pipeline masih di tahap <b id="ai-phase">—</b>, jadi verdict AI belum mengubah status alert.</p>
   </header>
 
+  <div class="soc-tiles">
+    <div class="soc-tile">
+      <span class="soc-tile-label">Diduga false positive</span>
+      <span class="soc-tile-value" id="ai-t-fp">—</span>
+      <span class="soc-tile-sub">label ai-triage:fp-suspected</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Dieskalasi ke analis</span>
+      <span class="soc-tile-value" id="ai-t-esc">—</span>
+      <span class="soc-tile-sub"><b id="ai-t-failsafe">—</b> karena fail-safe</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Kesesuaian dengan analis</span>
+      <span class="soc-tile-value" id="ai-t-agree">—</span>
+      <span class="soc-tile-sub">mode bayangan, 4 minggu terakhir</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Miss rate</span>
+      <span class="soc-tile-value" id="ai-t-miss">—</span>
+      <span class="soc-tile-sub">TP yang dilabeli FP; target mendekati 0</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Golden set</span>
+      <span class="soc-tile-value"><span id="ai-t-golden">—</span><span class="soc-unit">dari <span id="ai-t-golden-target">—</span></span></span>
+      <span class="soc-tile-sub">alert historis berlabel analis</span>
+    </div>
+  </div>
+
   <div class="soc-grid">
+    <section class="soc-card soc-wide">
+      <h2>Roadmap otomasi</h2>
+      <p class="soc-card-note" id="ai-pipe-note"></p>
+      <ol class="phases" id="ai-phases"></ol>
+    </section>
+
     <section class="soc-card soc-wide">
       <h2>Skor risiko</h2>
       <p class="soc-card-note">Skala 0–100, gabungan severity, kritikalitas aset, keyakinan AI, dan kecocokan IOC.</p>
@@ -661,6 +734,12 @@ body::after {
       <h2>Persetujuan aksi</h2>
       <p class="soc-card-note">Aksi berdampak tinggi baru dijalankan setelah disetujui analis. Keputusan di sini hanya tersimpan selama halaman terbuka.</p>
       <div class="approvals" id="au-approvals"></div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Persetujuan tuning rule</h2>
+      <p class="soc-card-note">Usulan dari FP Classifier untuk mengurangi false positive di sumbernya. Exception harus sempit (rule + host + proses) dan punya masa berlaku; perlu persetujuan analis senior.</p>
+      <div class="approvals" id="au-tuning"></div>
     </section>
 
     <section class="soc-card soc-wide">
@@ -966,52 +1045,159 @@ const DATA = {
     {id: 'ALR-90400', time: '2026-11-02T05:02:00Z', rule: 'Brute force VPN diblokir', source: 'Firewall', severity: 'Low', asset: 'VPN-GW', assignee: '', status: 'New'},
     {id: 'ALR-90399', time: '2026-11-02T04:47:00Z', rule: 'Scheduled task baru dibuat', source: 'Windows', severity: 'Medium', asset: 'APP-SRV-07', assignee: 'Rina', status: 'In triage'},
   ],
+  // FP Classifier output follows the JSON schema in multi-agent-orchestration-report.md:
+  // verdict, confidence, reasoning, evidence, recommended_action, tuning_suggestion.
+  // risk, asset_critical, correlated and next_steps are enrichment added by the pipeline.
   ai_investigations: [
     {
-      id: 'INC-2611-041', verdict: 'Kemungkinan besar true positive', confidence: 0.92, risk: 94,
-      summary: 'FIN-WS-0231 menghubungi server C2 kira-kira setiap 60 detik dengan jitter rendah, pola khas beacon Cobalt Strike. Prosesnya rundll32.exe yang memuat DLL dari folder Temp.',
+      id: 'INC-2611-041', verdict: 'true_positive', confidence: 0.92, risk: 94, asset_critical: true,
+      recommended_action: 'escalate', tuning_suggestion: '',
+      reasoning: 'FIN-WS-0231 menghubungi server C2 kira-kira setiap 60 detik dengan jitter rendah, pola khas beacon Cobalt Strike. Prosesnya rundll32.exe yang memuat DLL dari folder Temp.',
+      evidence: [
+        'process.name: rundll32.exe; dll.path: %TEMP%\\upd.dll; dll.code_signature.exists: false',
+        'destination.ip: 185.220.101.47, koneksi HTTPS tiap ±60 detik sejak 07:58 UTC',
+        'threat.indicator.provider: Abuse.ch (Cobalt Strike C2)',
+      ],
       correlated: [
         {t: '06:30', src: 'Windows', ev: '1.240 kegagalan login SMB ke DC-02, salah satunya dari FIN-WS-0231'},
         {t: '07:58', src: 'EDR', ev: 'rundll32.exe memuat upd.dll dari %TEMP%'},
         {t: '07:58', src: 'Firewall', ev: 'HTTPS keluar ke 185.220.101.47:443 tiap ±60 detik'},
-        {t: '08:14', src: 'TI', ev: '185.220.101.47 cocok dengan IOC Abuse.ch (Cobalt Strike C2)'},
+        {t: '08:14', src: 'TI', ev: '185.220.101.47 cocok dengan IOC Abuse.ch'},
       ],
-      findings: ['Beacon HTTPS ke 185.220.101.47 sejak 07:58 UTC', 'DLL tanpa tanda tangan dimuat dari %TEMP%', 'Kemungkinan terkait password spraying di INC-2611-039'],
-      actions: ['Isolasi FIN-WS-0231 lewat EDR', 'Blokir 185.220.101.47 di firewall perimeter', 'Cari hash DLL yang sama di host lain'],
+      next_steps: ['Isolasi FIN-WS-0231 lewat EDR', 'Blokir 185.220.101.47 di firewall perimeter', 'Cari hash DLL yang sama di host lain'],
     },
     {
-      id: 'INC-2611-040', verdict: 'Perlu konfirmasi pemilik akun', confidence: 0.78, risk: 88,
-      summary: 'Akun admin login dari Jakarta lalu 14 menit kemudian dari Amsterdam, didahului 23 permintaan MFA yang ditolak. Pola ini cocok dengan serangan MFA fatigue.',
+      id: 'INC-2611-040', verdict: 'needs_review', confidence: 0.78, risk: 88, asset_critical: true,
+      recommended_action: 'escalate', tuning_suggestion: '',
+      reasoning: 'Akun admin login dari Jakarta lalu 14 menit kemudian dari Amsterdam, didahului 23 permintaan MFA yang ditolak. Pola ini cocok dengan MFA fatigue, tetapi perlu konfirmasi pemilik akun.',
+      evidence: [
+        'event.outcome: failure ×23 (push MFA ditolak) dalam 9 menit',
+        'source.geo.country_iso_code: NL, 14 menit setelah login dari ID',
+        'source.as.organization.name: penyedia hosting, bukan ISP rumah',
+      ],
       correlated: [
         {t: '07:43', src: 'Identity', ev: '23 push MFA untuk admin.it ditolak dalam 9 menit'},
         {t: '07:52', src: 'Identity', ev: 'Login berhasil dari IP hosting di Belanda'},
         {t: '07:53', src: 'Cloud', ev: 'Token baru dipakai membaca daftar pengguna direktori'},
       ],
-      findings: ['Login berhasil dari IP hosting di Belanda', 'Token sudah dipakai membaca direktori pengguna', 'Belum ada perubahan izin atau aturan mailbox'],
-      actions: ['Cabut semua sesi aktif akun admin', 'Hubungi pemilik akun lewat kanal terpisah', 'Aktifkan number matching untuk MFA'],
+      next_steps: ['Cabut semua sesi aktif akun admin', 'Hubungi pemilik akun lewat kanal terpisah', 'Aktifkan number matching untuk MFA'],
     },
     {
-      id: 'INC-2611-039', verdict: 'Kemungkinan besar true positive', confidence: 0.85, risk: 81,
-      summary: '1.240 kegagalan autentikasi SMB ke DC-02 dari 3 host internal dalam 10 menit. Polanya konsisten dengan password spraying setelah penyerang mendapat akses awal.',
+      id: 'INC-2611-039', verdict: 'true_positive', confidence: 0.85, risk: 81, asset_critical: true,
+      recommended_action: 'escalate', tuning_suggestion: '',
+      reasoning: '1.240 kegagalan autentikasi SMB ke DC-02 dari 3 host internal dalam 10 menit, lalu satu akun layanan berhasil masuk. Polanya konsisten dengan password spraying.',
+      evidence: [
+        'event.code: 4625 ×1.240 dari 3 source.ip di VLAN keuangan',
+        'user.name: svc-backup, event.outcome: success setelah 312 percobaan',
+        'file.path: \\\\DC-02\\ADMIN$ dibuka oleh svc-backup pukul 06:44',
+      ],
       correlated: [
         {t: '06:30', src: 'Windows', ev: 'Event 4625 massal dari 3 host di VLAN keuangan'},
         {t: '06:41', src: 'Windows', ev: 'svc-backup berhasil login setelah 312 percobaan'},
         {t: '06:44', src: 'Windows', ev: 'svc-backup membuka share ADMIN$ di DC-02'},
       ],
-      findings: ['3 host sumber, semuanya di VLAN keuangan', '1 akun layanan berhasil login setelah 312 percobaan', 'Waktunya dekat dengan beacon di INC-2611-041'],
-      actions: ['Reset kata sandi svc-backup', 'Batasi SMB dari VLAN keuangan ke DC', 'Gabungkan dengan INC-2611-041 dalam satu kasus'],
+      next_steps: ['Reset kata sandi svc-backup', 'Batasi SMB dari VLAN keuangan ke DC', 'Gabungkan dengan INC-2611-041 dalam satu kasus'],
     },
     {
-      id: 'INC-2611-037', verdict: 'Mencurigakan, perlu konteks', confidence: 0.64, risk: 58,
-      summary: 'PowerShell dengan perintah ter-encode Base64 dijalankan dari makro dokumen Word. Perintahnya mengunduh skrip, tetapi domain tujuan sudah tidak aktif.',
+      id: 'INC-2611-037', verdict: 'needs_review', confidence: 0.64, risk: 58, asset_critical: false,
+      recommended_action: 'escalate', tuning_suggestion: '',
+      reasoning: 'PowerShell ter-encode dijalankan dari makro Word dan mencoba mengunduh skrip, tetapi domain tujuan sudah tidak aktif. Tidak cukup bukti untuk memastikan.',
+      evidence: [
+        'process.parent.name: WINWORD.EXE; process.name: powershell.exe; process.args: -enc …',
+        'dns.question.name: cdn-update-check.net, dns.response_code: NXDOMAIN',
+      ],
       correlated: [
         {t: '22:46', src: 'Email', ev: 'Lampiran invoice_okt.docm diterima HR-LT-0118'},
         {t: '22:47', src: 'EDR', ev: 'WINWORD.EXE menjalankan powershell -enc …'},
         {t: '22:47', src: 'Proxy', ev: 'DNS gagal untuk cdn-update-check.net'},
       ],
-      findings: ['Proses induk WINWORD.EXE', 'Domain unduhan tidak bisa di-resolve', 'Tidak ada koneksi keluar lanjutan dari host'],
-      actions: ['Ambil salinan dokumen untuk dianalisis', 'Periksa apakah dokumen yang sama diterima pengguna lain', 'Pindai penuh HR-LT-0118'],
+      next_steps: ['Ambil salinan dokumen untuk dianalisis', 'Periksa apakah dokumen yang sama diterima pengguna lain', 'Pindai penuh HR-LT-0118'],
     },
+    {
+      id: 'ALR-90407', verdict: 'false_positive', confidence: 0.95, risk: 12, asset_critical: false,
+      recommended_action: 'tune_rule',
+      tuning_suggestion: 'Exception untuk rule "Port scan internal": source.ip: 10.20.4.17 AND process.name: nessusd, berlaku 90 hari.',
+      reasoning: 'Sumber pemindaian adalah scanner kerentanan terjadwal milik tim Infra. Jadwal dan pola port sama dengan 48 alert sebelumnya yang ditutup analis sebagai false positive.',
+      evidence: [
+        'source.ip: 10.20.4.17 tercatat di CMDB sebagai VULN-SCAN-01 (pemilik: tim Infra)',
+        'process.name: nessusd',
+        'Jadwal tetap Senin 07:00–09:00; 48 alert serupa ditutup sebagai FP dalam 12 minggu',
+      ],
+      correlated: [
+        {t: '07:00', src: 'IDS', ev: 'SYN ke 1.024 port di 10.20.0.0/16 dari 10.20.4.17'},
+        {t: '07:00', src: 'CMDB', ev: '10.20.4.17 = VULN-SCAN-01, aset non-kritikal'},
+        {t: '07:30', src: 'SIEM', ev: 'Alert ALR-90407 dibuat'},
+      ],
+      next_steps: [],
+    },
+    {
+      id: 'ALR-90404', verdict: 'false_positive', confidence: 0.9, risk: 15, asset_critical: false,
+      recommended_action: 'close', tuning_suggestion: '',
+      reasoning: 'Pengguna mengganti kata sandi pukul 06:20 lalu gagal login dari laptopnya sendiri. Tidak ada percobaan dari perangkat atau IP lain.',
+      evidence: [
+        'user.name: user.hr07, event.action: password-change pukul 06:20',
+        'source.ip: 10.30.2.44 = HR-LT-0122, perangkat terdaftar milik pengguna yang sama',
+        'Tidak ada event.outcome: success dari source.ip lain dalam 24 jam',
+      ],
+      correlated: [
+        {t: '06:20', src: 'Identity', ev: 'user.hr07 mengganti kata sandi'},
+        {t: '06:31', src: 'Windows', ev: '10 login gagal dari HR-LT-0122'},
+        {t: '06:40', src: 'Identity', ev: 'Akun user.hr07 terkunci otomatis'},
+      ],
+      next_steps: [],
+    },
+    {
+      id: 'ALR-90411', verdict: 'false_positive', confidence: 0.71, risk: 64, asset_critical: true,
+      recommended_action: 'close', tuning_suggestion: '',
+      reasoning: 'Kemungkinan pengguna tidak sengaja menolak push MFA berulang kali.',
+      evidence: [],
+      correlated: [
+        {t: '07:43', src: 'Identity', ev: 'Push MFA ditolak berulang untuk admin.it'},
+      ],
+      next_steps: [],
+    },
+  ],
+  ai_pipeline: {
+    phase: 2,
+    phases: [
+      {name: 'Analisis FP', note: 'Data 30–90 hari, Top 10 rule, baseline'},
+      {name: 'Golden set + prototipe', note: 'Label alert historis, uji offline'},
+      {name: 'Mode bayangan', note: 'AI hanya mencatat verdict, dibandingkan dengan analis'},
+      {name: 'Mode saran', note: 'Tag dan catatan muncul di alert'},
+      {name: 'Otomasi terbatas', note: 'Auto-close pola FP terkonfirmasi + audit sampling'},
+    ],
+    model: 'belum ditentukan (cloud atau self-hosted)',
+    prompt_version: 'fp-classifier v0.3',
+    temperature: 0.1,
+    agreement: 0.91,
+    miss_rate: 0,
+    golden: {labeled: 320, target: 500},
+    audit_sample: 0.1,
+  },
+  fp_metrics: [
+    {label: 'False positive rate', value: 0.31, prev: 0.36, kind: 'pct', better: 'down'},
+    {label: 'Miss rate (TP yang dilabeli FP)', value: 0, prev: 0, kind: 'pct', better: 'down', note: 'harus mendekati 0'},
+    {label: 'Waktu analis per alert', value: 6.4, prev: 9.1, kind: 'min', better: 'down'},
+    {label: 'Alert yang butuh sentuhan manusia', value: 0.58, prev: 0.81, kind: 'pct', better: 'down'},
+    {label: 'Usulan tuning yang disetujui', value: 0.67, prev: 0.5, kind: 'pct', better: 'up'},
+  ],
+  noisy_rules: [
+    {rule: 'Brute force VPN diblokir', alerts: 5120, fp: 0.97},
+    {rule: 'Akun terkunci setelah 10 kali gagal', alerts: 3380, fp: 0.92},
+    {rule: 'Port scan internal', alerts: 2410, fp: 0.88},
+    {rule: 'SQL injection diblokir WAF', alerts: 1960, fp: 0.81},
+    {rule: 'Antivirus mendeteksi adware', alerts: 1240, fp: 0.74},
+    {rule: 'Upload besar ke cloud storage', alerts: 860, fp: 0.69},
+    {rule: 'Scheduled task baru dibuat', alerts: 790, fp: 0.63},
+    {rule: 'Login dari negara yang tidak biasa', alerts: 540, fp: 0.41},
+    {rule: 'PowerShell dengan perintah ter-encode', alerts: 420, fp: 0.22},
+    {rule: 'Push MFA ditolak berulang', alerts: 310, fp: 0.35},
+  ],
+  // Rule tuning proposed by the FP Classifier; a senior analyst approves each one
+  tuning: [
+    {id: 'TUN-042', rule: 'Port scan internal', kind: 'Exception', change: 'source.ip: 10.20.4.17 AND process.name: nessusd', expires_days: 90, basis: '48 alert serupa ditutup analis sebagai FP dalam 12 minggu', ref: 'ALR-90407', requested: '2026-11-02T07:31:00Z', decision: ''},
+    {id: 'TUN-041', rule: 'Akun terkunci setelah 10 kali gagal', kind: 'Ubah kondisi', change: 'Abaikan jika event.action: password-change dari user.name yang sama < 1 jam sebelumnya dan source.ip adalah perangkat terdaftar miliknya', expires_days: 60, basis: '71% alert rule ini terjadi dalam 1 jam setelah ganti kata sandi', ref: 'ALR-90404', requested: '2026-11-02T06:45:00Z', decision: ''},
+    {id: 'TUN-040', rule: 'Antivirus mendeteksi adware', kind: 'Exception', change: 'file.hash.sha256: 3b1f9a…e07c AND host.name: SALES-LT-*', expires_days: 30, basis: '112 deteksi, semua dari installer PDF reader resmi yang sama', ref: 'ALR-90401', requested: '2026-11-01T16:10:00Z', decision: ''},
   ],
   ti_feeds: [
     {feed: 'AlienVault OTX', indicators: 48210, synced_min: 35},
@@ -1535,6 +1721,31 @@ function drawOverview() {
     td(tr, fmtInt(r.alerts), 'soc-num');
     setDelta(el('b', null, null, td(tr, null, 'soc-num')), r.change);
   });
+
+  // FP reduction metrics; "better" says which direction is an improvement
+  const fm = $('tb-fpm');
+  fm.replaceChildren();
+  DATA.fp_metrics.forEach((m) => {
+    const tr = el('tr', null, null, fm);
+    const name = td(tr, m.label);
+    if (m.note) el('div', 'soc-card-note', m.note, name);
+    td(tr, m.kind === 'pct' ? fmtPct(m.value, 1) : m.value.toFixed(1) + ' mnt', 'soc-num');
+    const b = el('b', null, null, td(tr, null, 'soc-num'));
+    const d = m.kind === 'pct' ? m.value - m.prev : (m.value - m.prev) / m.prev;
+    if (d === 0) { b.textContent = 'tetap'; return; }
+    const good = (d < 0) === (m.better === 'down');
+    b.className = good ? 'soc-good' : 'soc-bad';
+    b.textContent = (d > 0 ? '▲ +' : '▼ ') + (m.kind === 'pct' ? (d * 100).toFixed(1) + ' poin' : fmtPct(d));
+  });
+
+  const nr = $('tb-noisy');
+  nr.replaceChildren();
+  [...DATA.noisy_rules].sort((a, b) => b.alerts - a.alerts).forEach((r) => {
+    const tr = el('tr', null, null, nr);
+    td(tr, r.rule);
+    td(tr, fmtInt(r.alerts), 'soc-num');
+    td(tr, fmtPct(r.fp), 'soc-num' + (r.fp >= 0.8 ? ' soc-bad' : r.fp >= 0.5 ? ' soc-warn' : ''));
+  });
 }
 
 // ---- 2. Alert Management ----
@@ -1579,6 +1790,9 @@ function drawAlerts() {
     td(tr, fmtTime(r.time), 'soc-num');
     sevChip(tr, r.severity);
     td(tr, r.rule);
+    const ai = AI_BY_ID[r.id];
+    if (ai) chip(tr, decide_ai(ai).tag, 'tone-' + decide_ai(ai).tone).title = decide_ai(ai).action;
+    else td(tr, '—', 'tone-muted');
     td(tr, r.source, 'soc-opt');
     td(tr, r.asset, 'soc-opt soc-mono');
 
@@ -1612,19 +1826,68 @@ function drawAlerts() {
 // ---- 3. AI Investigation ----
 const riskColor = (v) => (v >= 80 ? 'var(--bad)' : v >= 60 ? 'var(--warn)' : 'var(--accent)');
 
+const AI_BY_ID = Object.fromEntries(DATA.ai_investigations.map((r) => [r.id, r]));
+const VERDICT_LABEL = {false_positive: 'False positive', true_positive: 'True positive', needs_review: 'Perlu review'};
+const VERDICT_TONE = {false_positive: 'ok', true_positive: 'bad', needs_review: 'warn'};
+const ACTION_LABEL = {close: 'Tutup alert', escalate: 'Eskalasi ke analis', tune_rule: 'Usulkan tuning rule'};
+
+// Decision rules from the orchestration report: only a well-evidenced, high-confidence FP on a
+// non-critical asset gets the fp-suspected label; everything else, and any invalid output, goes to a human.
+function decide_ai(r) {
+  const valid = VERDICT_LABEL[r.verdict] && ACTION_LABEL[r.recommended_action] && r.confidence >= 0 && r.confidence <= 1;
+  if (!valid) return {tag: 'ai-triage:needs-review', tone: 'warn', escalate: true, failsafe: true, action: 'Eskalasi ke analis (fail-safe): output AI tidak valid'};
+  if (!r.evidence.length) return {tag: 'ai-triage:needs-review', tone: 'warn', escalate: true, failsafe: true, action: 'Eskalasi ke analis (fail-safe): verdict tanpa bukti ditolak'};
+  if (r.verdict === 'false_positive') {
+    if (r.asset_critical) return {tag: 'ai-triage:needs-review', tone: 'warn', escalate: true, failsafe: false, action: 'Eskalasi ke analis: aset kritikal'};
+    if (r.confidence < 0.9) return {tag: 'ai-triage:needs-review', tone: 'warn', escalate: true, failsafe: false, action: 'Eskalasi ke analis: confidence menengah'};
+    return {tag: 'ai-triage:fp-suspected', tone: 'ok', escalate: false, failsafe: false, action: 'Diberi label ai-triage:fp-suspected; analis tetap yang menutup alert'};
+  }
+  if (r.verdict === 'true_positive') return {tag: 'ai-triage:tp-likely', tone: 'bad', escalate: true, failsafe: false, action: 'Eskalasi ke analis'};
+  return {tag: 'ai-triage:needs-review', tone: 'warn', escalate: true, failsafe: false, action: 'Eskalasi ke analis'};
+}
+
+function aiSource(id) {
+  const inc = DATA.incidents.find((i) => i.id === id);
+  if (inc) return {title: inc.title, severity: inc.severity};
+  const al = DATA.alerts.find((a) => a.id === id);
+  return al ? {title: al.rule, severity: al.severity} : {title: id, severity: ''};
+}
+
 function drawAI() {
-  const byId = Object.fromEntries(DATA.incidents.map((i) => [i.id, i]));
   const inv = [...DATA.ai_investigations].sort((a, b) => b.risk - a.risk);
+  const p = DATA.ai_pipeline;
+  const dec = inv.map(decide_ai);
+  const fp = dec.filter((d) => !d.escalate).length;
   $('ai-count').textContent = fmtInt(inv.length);
-  $('ai-logs').textContent = fmtInt(inv.reduce((s, r) => s + r.correlated.length, 0));
-  $('ai-top').textContent = inv[0].risk + ' (' + inv[0].id + ')';
+  $('ai-fp').textContent = fmtInt(fp);
+  $('ai-esc').textContent = fmtInt(inv.length - fp);
+  $('ai-phase').textContent = p.phases[p.phase].name;
+  $('ai-t-fp').textContent = fmtInt(fp);
+  $('ai-t-esc').textContent = fmtInt(inv.length - fp);
+  $('ai-t-failsafe').textContent = fmtInt(dec.filter((d) => d.failsafe).length);
+  $('ai-t-agree').textContent = fmtPct(p.agreement);
+  $('ai-t-miss').textContent = fmtPct(p.miss_rate, 1);
+  $('ai-t-miss').classList.toggle('soc-bad', p.miss_rate > 0);
+  $('ai-t-golden').textContent = fmtInt(p.golden.labeled);
+  $('ai-t-golden-target').textContent = fmtInt(p.golden.target);
+
+  $('ai-pipe-note').textContent = 'Model: ' + p.model + ' · prompt ' + p.prompt_version + ' · temperature ' + p.temperature +
+    ' · audit sampling ' + fmtPct(p.audit_sample) + ' alert berlabel FP per minggu.';
+  const ph = $('ai-phases');
+  ph.replaceChildren();
+  p.phases.forEach((s, i) => {
+    const li = el('li', i < p.phase ? 'done' : i === p.phase ? 'now' : null, null, ph);
+    el('span', 'phase-n', 'Fase ' + i + (i < p.phase ? ' · selesai' : i === p.phase ? ' · berjalan' : ''), li);
+    el('b', null, s.name, li);
+    el('span', null, s.note, li);
+  });
 
   const rk = $('ai-risk');
   rk.replaceChildren();
   inv.forEach((r) => {
     const row = el('div', 'risk-row', null, rk);
     el('span', 'soc-mono', r.id, row);
-    el('span', 'risk-name', (byId[r.id] || {}).title || '', row);
+    el('span', 'risk-name', aiSource(r.id).title, row);
     const fill = el('span', null, null, el('span', 'risk-bar', null, row));
     fill.style.width = r.risk + '%';
     fill.style.background = riskColor(r.risk);
@@ -1634,18 +1897,27 @@ function drawAI() {
   const list = $('ai-list');
   list.replaceChildren();
   inv.forEach((r) => {
-    const inc = byId[r.id] || {};
+    const src = aiSource(r.id);
+    const d = decide_ai(r);
     const card = el('article', 'soc-card ai-card', null, list);
     const top = el('div', 'ai-top', null, card);
     el('span', 'soc-mono', r.id, top);
-    if (inc.severity) el('span', 'soc-chip chip-' + inc.severity.toLowerCase(), inc.severity, top);
+    if (src.severity) el('span', 'soc-chip chip-' + src.severity.toLowerCase(), src.severity, top);
+    el('span', 'soc-chip tone-' + VERDICT_TONE[r.verdict], 'AI: ' + VERDICT_LABEL[r.verdict], top);
     el('span', 'risk-pill', 'Risiko ' + r.risk, top).style.color = riskColor(r.risk);
     el('span', 'ai-conf', 'Keyakinan ' + fmtPct(r.confidence), top);
     el('span', null, null, el('div', 'ai-meter', null, card)).style.width = fmtPct(r.confidence);
-    el('h2', null, inc.title || r.id, card);
-    el('p', 'ai-verdict', r.verdict, card);
-    el('h3', null, 'Ringkasan insiden', card);
-    el('p', null, r.summary, card);
+    el('h2', null, src.title, card);
+    el('p', 'ai-verdict tone-' + d.tone, d.action, card);
+    el('h3', null, 'Alasan', card);
+    el('p', null, r.reasoning, card);
+    el('h3', null, 'Bukti', card);
+    if (r.evidence.length) {
+      const ul = el('ul', 'ai-evidence', null, card);
+      r.evidence.forEach((f) => el('li', null, f, ul));
+    } else {
+      el('p', 'tone-bad', 'Tidak ada bukti yang dikutip dari field log.', card);
+    }
     el('h3', null, 'Korelasi log', card);
     const corr = el('ol', 'corr', null, card);
     r.correlated.forEach((e) => {
@@ -1654,12 +1926,26 @@ function drawAI() {
       el('span', 'corr-src', e.src, li);
       el('span', null, e.ev, li);
     });
-    el('h3', null, 'Temuan', card);
-    const ul = el('ul', null, null, card);
-    r.findings.forEach((f) => el('li', null, f, ul));
-    el('h3', null, 'Rekomendasi', card);
-    const ol = el('ol', null, null, card);
-    r.actions.forEach((a) => el('li', null, a, ol));
+    el('h3', null, 'Rekomendasi AI', card);
+    el('p', null, ACTION_LABEL[r.recommended_action], card);
+    if (r.next_steps.length) {
+      const ol = el('ol', null, null, card);
+      r.next_steps.forEach((a) => el('li', null, a, ol));
+    }
+    if (r.tuning_suggestion) {
+      el('h3', null, 'Usulan tuning', card);
+      el('p', null, r.tuning_suggestion + ' Menunggu persetujuan di Automation Center.', card);
+    }
+    const det = el('details', 'ai-json', null, card);
+    el('summary', null, 'Output JSON FP Classifier', det);
+    el('pre', null, JSON.stringify({
+      verdict: r.verdict,
+      confidence: r.confidence,
+      reasoning: r.reasoning,
+      evidence: r.evidence,
+      recommended_action: r.recommended_action,
+      tuning_suggestion: r.tuning_suggestion,
+    }, null, 2), det);
   });
 }
 
@@ -1849,7 +2135,7 @@ $('soc-search').addEventListener('input', drawIncidents);
 // ---- 6. Automation Center ----
 function autoStats() {
   const s = DATA.automation_stats;
-  const pending = DATA.approvals.filter((a) => !a.decision).length;
+  const pending = DATA.approvals.filter((a) => !a.decision).length + DATA.tuning.filter((t) => !t.decision).length;
   $('au-runs').textContent = fmtInt(s.runs_24h);
   $('au-rate').textContent = fmtPct(s.success);
   $('au-pending').textContent = fmtInt(pending);
@@ -1890,6 +2176,38 @@ function drawApprovals() {
     no.type = 'button';
     yes.addEventListener('click', () => decide(a, true));
     no.addEventListener('click', () => decide(a, false));
+  });
+}
+
+function drawTuning() {
+  const box = $('au-tuning');
+  box.replaceChildren();
+  DATA.tuning.forEach((t) => {
+    const row = el('div', 'approval', null, box);
+    const main = el('div', 'approval-main', null, row);
+    el('strong', null, t.kind + ' untuk rule "' + t.rule + '"', main);
+    el('span', 'soc-mono ti-ind', t.change, main);
+    el('span', 'approval-meta', 'Dasar: ' + t.basis + '.', main);
+    el('span', 'approval-meta', t.id + ' · dari ' + t.ref + ' · berlaku ' + t.expires_days + ' hari · diusulkan ' + fmtTime(t.requested), main);
+    // A wildcard widens an exception beyond one host; flag it for the reviewer
+    if (/\*/.test(t.change)) el('span', 'soc-chip tone-warn', 'Cakupan luas (wildcard), tinjau ulang', main).style.justifySelf = 'start';
+    const act = el('div', 'approval-act', null, row);
+    if (t.decision) {
+      el('span', 'soc-chip tone-' + tone(t.decision), t.decision + ' oleh Anda', act);
+      return;
+    }
+    const yes = el('button', 'soc-btn primary', 'Setujui', act);
+    const no = el('button', 'soc-btn danger', 'Tolak', act);
+    yes.type = 'button';
+    no.type = 'button';
+    const choose = (ok) => {
+      t.decision = ok ? 'Disetujui' : 'Ditolak';
+      audit((ok ? 'Menyetujui' : 'Menolak') + ' tuning ' + t.id + ' untuk rule ' + t.rule, t.ref);
+      autoStats();
+      drawTuning();
+    };
+    yes.addEventListener('click', () => choose(true));
+    no.addEventListener('click', () => choose(false));
   });
 }
 
@@ -2098,6 +2416,7 @@ drawTimeline();
 drawIncidents();
 autoStats();
 drawApprovals();
+drawTuning();
 drawPlaybooks();
 drawRuns();
 drawSiem();
