@@ -426,6 +426,7 @@ def ioc_in_lists(value):
 
 ABUSE_KEY=os.environ.get("ABUSEIPDB_API_KEY","").strip()
 ABUSE_DAILY_LIMIT=int(os.environ.get("ABUSEIPDB_DAILY_LIMIT","900"))
+ABUSE_URL=os.environ.get("ABUSEIPDB_URL","https://api.abuseipdb.com/api/v2/check")  # hanya diubah untuk pengujian
 ABUSE_MAX_NEW=15
 ABUSE_TTL=86400
 _abuse_neg={}
@@ -467,7 +468,7 @@ def abuse_check(value,fetch=True,force=False):
     neg=_abuse_neg.get(ip)
     if neg and now-neg[0]<300:return neg[1]
     if abuse_used_today()>=ABUSE_DAILY_LIMIT:return {"status":"error","reason":"Batas kuota harian AbuseIPDB tercapai"}
-    req=Request("https://api.abuseipdb.com/api/v2/check?"+urlencode({"ipAddress":ip,"maxAgeInDays":90,"verbose":""}),headers={"Key":ABUSE_KEY,"Accept":"application/json"})
+    req=Request(ABUSE_URL+"?"+urlencode({"ipAddress":ip,"maxAgeInDays":90,"verbose":""}),headers={"Key":ABUSE_KEY,"Accept":"application/json"})
     try:
         with urlopen(req,timeout=8) as r:d=json.loads(r.read().decode()).get("data",{})
     except HTTPError as exc:
@@ -925,7 +926,7 @@ PB_BEAT=os.environ.get("PLAYBOOK_HEARTBEAT","/var/lib/soc-automation-dashboard/b
 PB_JAIL="beruk-playbook"
 PB_EVAL_INTERVAL=int(os.environ.get("PLAYBOOK_EVAL_INTERVAL","60"))
 PB_MODES=("off","dry-run","approval","auto")
-PB_DEFAULTS={"mode":"dry-run","min_level":8,"min_alerts":5,"window_min":10,"agents":["VM-11-51-ubuntu"],"min_abuse_score":0,"max_per_hour":10,"suricata":True,"suricata_min_alerts":3}
+PB_DEFAULTS={"mode":"dry-run","min_level":8,"min_alerts":5,"window_min":10,"agents":["VM-11-51-ubuntu"],"min_abuse_score":0,"max_per_hour":10,"suricata":True,"suricata_min_alerts":3,"rep_mode":"dry-run","rep_min_score":100,"rep_window_min":60}
 PB_BLOCKING=("proposed","approved","executing","banned","rejected","unbanned")
 
 def pb_config():
@@ -943,12 +944,15 @@ def pb_validate(body):
     if "mode" in body:
         if body["mode"] not in PB_MODES:raise ValueError("Mode tidak dikenal")
         out["mode"]=body["mode"]
-    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(1,100),"suricata_min_alerts":(1,1000)}.items():
+    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(1,100),"suricata_min_alerts":(1,1000),"rep_min_score":(50,100),"rep_window_min":(1,1440)}.items():
         if k in body:
             try:v=int(body[k])
             except (TypeError,ValueError):raise ValueError(k+" harus berupa angka")
             if not lo<=v<=hi:raise ValueError("%s harus antara %d dan %d"%(k,lo,hi))
             out[k]=v
+    if "rep_mode" in body:
+        if body["rep_mode"] not in PB_MODES:raise ValueError("Mode aturan reputasi tidak dikenal")
+        out["rep_mode"]=body["rep_mode"]
     if "suricata" in body:
         if not isinstance(body["suricata"],bool):raise ValueError("suricata harus true atau false")
         out["suricata"]=body["suricata"]
@@ -1027,6 +1031,38 @@ def pb_candidates(cfg):
             else:out.append(b);seen[k]=b
     return out
 
+def pb_evaluate_rep(cfg):
+    """Aturan reputasi: IP publik yang muncul sebagai sumber alert (Wazuh atau Suricata masuk) dan berskor AbuseIPDB >= rep_min_score.
+    Tidak butuh jumlah alert minimum; modenya terpisah (rep_mode) dari aturan jumlah alert."""
+    if not ABUSE_KEY:return 0
+    mode=cfg["rep_mode"];status={"dry-run":"dry-run","approval":"proposed","auto":"approved"}[mode]
+    pol=pb_policy();banned,_,_=pb_banned();now=time.time()
+    wide=dict(cfg,min_alerts=1,suricata_min_alerts=1,window_min=cfg["rep_window_min"])
+    cands=[]
+    with db() as con:
+        made=con.execute("SELECT count(*) FROM playbook_actions WHERE at>?",(now-3600,)).fetchone()[0]
+        for b in pb_candidates(wide):
+            ip=str(b["key"])
+            if pb_protected(ip,pol) or ip in banned:continue
+            ex=con.execute("SELECT status FROM playbook_actions WHERE ip=? AND at>? ORDER BY at DESC LIMIT 1",(ip,now-86400)).fetchone()
+            if ex and (ex[0] in PB_BLOCKING or (ex[0]=="dry-run" and mode=="dry-run")):continue
+            cands.append(b)
+    budget=10;rows=[]
+    for b in sorted(cands,key=lambda x:-x["doc_count"]):
+        if made+len(rows)>=cfg["max_per_hour"]:break
+        ip=str(b["key"]);ab=abuse_check(ip,fetch=False)
+        if ab.get("status")!="ok" and budget>0:budget-=1;ab=abuse_check(ip)
+        if ab.get("status")!="ok" or ab.get("score",0)<cfg["rep_min_score"]:continue
+        rules=[str(r["key"]) for r in b.get("rules",{}).get("buckets",[])]
+        agent=(b.get("agent",{}).get("buckets") or [{"key":""}])[0]["key"]
+        cats=ab.get("categories") or []
+        reason="Reputasi AbuseIPDB %d/100 (%d laporan dari %d pelapor)%s; %d alert level >=%d dalam %d menit (rule %s)"%(ab["score"],ab.get("reports",0),ab.get("users",0),", "+", ".join(c["name"] for c in cats[:3]) if cats else "",b["doc_count"],cfg["min_level"],cfg["rep_window_min"],", ".join(rules))
+        rows.append((secrets.token_hex(8),now,ip,status,reason,int(b["doc_count"]),int(b["lvl"]["value"] or 0),json.dumps(rules),str(agent),ab["score"],"playbook-reputasi" if status=="approved" else None,now if status=="approved" else None,json.dumps(cats)))
+    if rows:
+        with db() as con:con.executemany("INSERT INTO playbook_actions(id,at,ip,status,reason,alerts,max_level,rules,agent,abuse,decided_by,decided_at,cats) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",rows)
+        for r in rows:audit("playbook reputasi "+r[3],r[2],r[4],"playbook")
+    return len(rows)
+
 def pb_evaluate(cfg):
     """Cari IP yang memenuhi syarat dan catat sebagai simulasi, usulan, atau (mode auto) aksi yang langsung disetujui."""
     pol=pb_policy();banned,_,_=pb_banned();now=time.time();status={"dry-run":"dry-run","approval":"proposed","auto":"approved"}[cfg["mode"]]
@@ -1098,8 +1134,10 @@ def playbook_loop():
         try:
             pb_reconcile()
             cfg=pb_config()
-            if cfg["mode"]!="off" and time.time()-last>=PB_EVAL_INTERVAL:
-                last=time.time();pb_evaluate(cfg)
+            if time.time()-last>=PB_EVAL_INTERVAL and (cfg["mode"]!="off" or cfg["rep_mode"]!="off"):
+                last=time.time()
+                if cfg["rep_mode"]!="off":pb_evaluate_rep(cfg)
+                if cfg["mode"]!="off":pb_evaluate(cfg)
         except Exception as exc:logging.warning("playbook loop: %s",type(exc).__name__)
         time.sleep(5)
 
@@ -1115,7 +1153,7 @@ def pb_state():
         except ValueError:x["rules"]=[]
         try:x["cats"]=json.loads(x.get("cats") or "[]")
         except ValueError:x["cats"]=[]
-    return {"config":cfg,"policy":pol,"helper_alive":pb_helper_alive(),"jail":PB_JAIL,"ban_hours":round(pb_ban_seconds()/3600,1),"actions":acts,"counts_24h":counts,"banned_active":active}
+    return {"config":cfg,"abuse_enabled":bool(ABUSE_KEY),"policy":pol,"helper_alive":pb_helper_alive(),"jail":PB_JAIL,"ban_hours":round(pb_ban_seconds()/3600,1),"actions":acts,"counts_24h":counts,"banned_active":active}
 
 def pb_decide(action_id,verb,user):
     """Hasil: (status_http, dict). verb: approve | reject | unban."""
@@ -1399,7 +1437,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/playbook/config":
             try:changes=pb_validate(body)
             except ValueError as exc:json_response(self,400,{"error":str(exc)});return
-            if changes.get("mode")=="auto" and body.get("confirm_auto") is not True:json_response(self,400,{"error":"Mode otomatis butuh konfirmasi eksplisit"});return
+            if "auto" in (changes.get("mode"),changes.get("rep_mode")) and body.get("confirm_auto") is not True:json_response(self,400,{"error":"Mode otomatis butuh konfirmasi eksplisit"});return
             with db() as con:
                 for k,v in changes.items():con.execute("INSERT INTO playbook_cfg(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",(k,json.dumps(v)))
             audit("playbook pengaturan","config",json.dumps(changes,ensure_ascii=False)[:300],sess['user'])

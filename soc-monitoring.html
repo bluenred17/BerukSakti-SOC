@@ -859,6 +859,7 @@ body::after {
         <div class="soc-tile"><span class="soc-tile-label">Simulasi, 24 jam</span><span class="soc-tile-value" id="pb-t-dry">—</span><span class="soc-tile-sub">IP yang akan diblokir</span></div>
         <div class="soc-tile"><span class="soc-tile-label">Pembantu root</span><span class="soc-tile-value" id="pb-t-helper" style="font-size:1.2rem">—</span><span class="soc-tile-sub" id="pb-t-helper-sub"></span></div>
       </div>
+      <p class="soc-card-note" id="pb-rep-note"></p>
       <p class="soc-card-note" id="pb-safety"></p>
       <div id="pb-form" hidden>
         <h3 class="detail-h">Pengaturan (administrator)</h3>
@@ -882,6 +883,16 @@ body::after {
           <label class="soc-card-note">skor AbuseIPDB min <input id="pb-abuse" class="soc-search" type="number" min="0" max="100" style="width:5rem;flex:none" aria-label="Skor AbuseIPDB minimum"> (0 = tidak dipakai)</label>
           <label class="soc-card-note"><input id="pb-suri" type="checkbox"> hitung alert Suricata yang masuk ke server, minimal <input id="pb-suri-n" class="soc-search" type="number" min="1" max="1000" style="width:5rem;flex:none" aria-label="Minimal alert Suricata"> alert</label>
           <label class="soc-card-note">maks usulan/jam <input id="pb-max" class="soc-search" type="number" min="1" max="100" style="width:5rem;flex:none" aria-label="Maksimal usulan per jam"></label>
+          <label class="soc-card-note">aturan reputasi AbuseIPDB
+            <select id="pb-rep-mode" class="soc-select" aria-label="Mode aturan reputasi AbuseIPDB">
+              <option value="off">Mati</option>
+              <option value="dry-run">Simulasi (hanya mencatat)</option>
+              <option value="approval">Persetujuan manual</option>
+              <option value="auto">Otomatis penuh</option>
+            </select>
+          </label>
+          <label class="soc-card-note">skor min <input id="pb-rep-score" class="soc-search" type="number" min="50" max="100" style="width:5rem;flex:none" aria-label="Skor AbuseIPDB untuk aturan reputasi"></label>
+          <label class="soc-card-note">IP terlihat dalam <input id="pb-rep-win" class="soc-search" type="number" min="1" max="1440" style="width:5rem;flex:none" aria-label="Jendela menit aturan reputasi"> menit</label>
           <button type="button" class="soc-btn primary" id="pb-save">Simpan pengaturan</button>
           <span class="soc-card-note" id="pb-msg" role="status"></span>
         </div>
@@ -3049,6 +3060,9 @@ function drawPlaybook() {
   const c = d.config;
   $('pb-rule').textContent = 'Aturan: IP publik yang bukan di daftar putih dan memicu minimal ' + c.min_alerts + ' alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' dalam ' + c.window_min + ' menit di agen ' + (c.agents.length ? c.agents.join(', ') : 'mana pun')
     + (c.suricata ? ', atau minimal ' + c.suricata_min_alerts + ' alert Suricata yang masuk ke server' : '') + (c.min_abuse_score ? ' dan berskor AbuseIPDB minimal ' + c.min_abuse_score : '') + ' dicatat sesuai mode. Pemblokiran dijalankan di jail fail2ban "' + d.jail + '" (UFW, semua port).';
+  $('pb-rep-note').textContent = 'Aturan reputasi AbuseIPDB (' + (PB_MODE[c.rep_mode] || c.rep_mode) + '): IP publik yang muncul sebagai sumber alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' (Wazuh, atau Suricata yang masuk ke server) dalam ' + c.rep_window_min + ' menit terakhir dan berskor AbuseIPDB ' + c.rep_min_score + '/100 ke atas'
+    + (c.rep_mode === 'auto' ? ' diblokir otomatis tanpa persetujuan.' : c.rep_mode === 'approval' ? ' diusulkan untuk disetujui.' : c.rep_mode === 'dry-run' ? ' hanya dicatat sebagai simulasi.' : ' tidak dievaluasi.')
+    + (d.abuse_enabled === false ? ' AbuseIPDB belum diaktifkan di server, jadi aturan ini tidak berjalan.' : '');
   $('pb-t-mode').textContent = PB_MODE[c.mode] || c.mode;
   $('pb-t-mode-sub').textContent = c.mode === 'auto' ? 'memblokir tanpa klik' : c.mode === 'approval' ? 'butuh klik Setujui' : c.mode === 'dry-run' ? 'tidak memblokir apa pun' : 'tidak mengevaluasi';
   $('pb-t-prop').textContent = fmtInt(d.counts_24h.proposed || 0);
@@ -3067,6 +3081,7 @@ function drawPlaybook() {
     $('pb-alerts').value = c.min_alerts; $('pb-window').value = c.window_min; $('pb-agents').value = c.agents.join(', ');
     $('pb-abuse').value = c.min_abuse_score; $('pb-max').value = c.max_per_hour;
     $('pb-suri').checked = !!c.suricata; $('pb-suri-n').value = c.suricata_min_alerts;
+    $('pb-rep-mode').value = c.rep_mode; $('pb-rep-score').value = c.rep_min_score; $('pb-rep-win').value = c.rep_window_min;
   }
 
   const tb = $('tb-pb');
@@ -3119,12 +3134,13 @@ async function refreshPlaybook() {
 setInterval(() => { if (!$('view-automation').hidden) refreshPlaybook(); }, 15000);
 
 $('pb-save').addEventListener('click', async () => {
-  const mode = $('pb-mode').value;
+  const mode = $('pb-mode').value, repMode = $('pb-rep-mode').value;
+  if (repMode === 'auto' && !confirm('Aturan reputasi OTOMATIS memblokir setiap IP berskor ' + $('pb-rep-score').value + '/100 ke atas yang muncul di alert, tanpa persetujuan siapa pun. IP di daftar putih tidak pernah diblokir, tetapi IP berbagi (cloud, NAT) berisiko salah blokir. Lanjutkan?')) return;
   if (mode === 'auto' && !confirm('Mode OTOMATIS memblokir IP tanpa persetujuan siapa pun. Pastikan daftar putih sudah benar dan simulasi sudah terbukti tepat. Lanjutkan?')) return;
   const m = $('pb-msg');
   m.textContent = 'Menyimpan…';
   try {
-    DATA.pb = await postJson('api/playbook/config', {mode, confirm_auto: mode === 'auto', min_level: $('pb-level').value, min_alerts: $('pb-alerts').value, window_min: $('pb-window').value,
+    DATA.pb = await postJson('api/playbook/config', {mode, confirm_auto: mode === 'auto' || repMode === 'auto', rep_mode: repMode, rep_min_score: $('pb-rep-score').value, rep_window_min: $('pb-rep-win').value, min_level: $('pb-level').value, min_alerts: $('pb-alerts').value, window_min: $('pb-window').value,
       agents: $('pb-agents').value.split(',').map((x) => x.trim()).filter(Boolean), min_abuse_score: $('pb-abuse').value || 0, max_per_hour: $('pb-max').value, suricata: $('pb-suri').checked, suricata_min_alerts: $('pb-suri-n').value});
     m.textContent = 'Tersimpan.';
     drawPlaybook();
