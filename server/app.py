@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Standalone, read-only Wazuh SOC console with local triage/case notes."""
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import hmac
 import ipaddress
@@ -361,35 +362,63 @@ def ioc_in_lists(value):
     return found
 
 ABUSE_KEY=os.environ.get("ABUSEIPDB_API_KEY","").strip()
-_abuse_cache={};_abuse_lock=threading.Lock();_abuse_day=[0,""]
 ABUSE_DAILY_LIMIT=int(os.environ.get("ABUSEIPDB_DAILY_LIMIT","900"))
+ABUSE_MAX_NEW=15
+ABUSE_TTL=86400
+_abuse_neg={}
 
-def abuse_check(value):
-    """Reputasi IP dari AbuseIPDB. Hanya IP publik; hasil di-cache 24 jam agar kuota gratis (1000/hari) hemat."""
+def _abuse_db(sql,args=()):
+    try:
+        with db() as con:return con.execute(sql,args).fetchall()
+    except Exception as exc:
+        logging.warning("abuse cache: %s",type(exc).__name__);return []
+
+def abuse_used_today():
+    """Pengecekan AbuseIPDB hari ini (UTC, sama dengan reset kuota mereka), dihitung dari cache yang tersimpan."""
+    start=time.time()//86400*86400
+    rows=_abuse_db("SELECT count(*) FROM abuse_cache WHERE at>=?",(start,))
+    return int(rows[0][0]) if rows else 0
+
+def abuse_check(value,fetch=True):
+    """Reputasi IP dari AbuseIPDB. Hanya IP publik; hasil di-cache 24 jam di SQLite (bertahan setelah restart) agar kuota gratis (1000/hari) hemat."""
     if not ABUSE_KEY:return {"status":"disabled"}
     try:ip=ipaddress.ip_address(value.strip())
     except ValueError:return {"status":"skipped","reason":"Bukan alamat IP"}
     if not ip.is_global:return {"status":"skipped","reason":"IP privat atau lokal tidak dikirim ke AbuseIPDB"}
     ip=str(ip);now=time.time()
-    with _abuse_lock:
-        hit=_abuse_cache.get(ip)
-        if hit and now-hit[0]<86400:return hit[1]
-        today=time.strftime("%Y-%m-%d",time.gmtime(now))
-        if _abuse_day[1]!=today:_abuse_day[0]=0;_abuse_day[1]=today
-        if _abuse_day[0]>=ABUSE_DAILY_LIMIT:return {"status":"error","reason":"Batas kuota harian AbuseIPDB tercapai"}
-        _abuse_day[0]+=1
+    rows=_abuse_db("SELECT data FROM abuse_cache WHERE ip=? AND at>?",(ip,now-ABUSE_TTL))
+    if rows:
+        try:return json.loads(rows[0][0])
+        except ValueError:pass
+    if not fetch:return {"status":"pending"}
+    neg=_abuse_neg.get(ip)
+    if neg and now-neg[0]<300:return neg[1]
+    if abuse_used_today()>=ABUSE_DAILY_LIMIT:return {"status":"error","reason":"Batas kuota harian AbuseIPDB tercapai"}
     req=Request("https://api.abuseipdb.com/api/v2/check?"+urlencode({"ipAddress":ip,"maxAgeInDays":90}),headers={"Key":ABUSE_KEY,"Accept":"application/json"})
     try:
         with urlopen(req,timeout=8) as r:d=json.loads(r.read().decode()).get("data",{})
     except HTTPError as exc:
         logging.warning("abuseipdb http %s",exc.code)
-        return {"status":"error","reason":"Kuota AbuseIPDB habis" if exc.code==429 else "API key AbuseIPDB ditolak" if exc.code in (401,403) else "AbuseIPDB error %s"%exc.code}
+        out={"status":"error","reason":"Kuota AbuseIPDB habis" if exc.code==429 else "API key AbuseIPDB ditolak" if exc.code in (401,403) else "AbuseIPDB error %s"%exc.code}
+        _abuse_neg[ip]=(now,out);return out
     except Exception as exc:
         logging.warning("abuseipdb failed: %s",type(exc).__name__)
-        return {"status":"error","reason":"AbuseIPDB tidak terjangkau"}
+        out={"status":"error","reason":"AbuseIPDB tidak terjangkau"};_abuse_neg[ip]=(now,out);return out
     out={"status":"ok","score":int(d.get("abuseConfidenceScore") or 0),"reports":int(d.get("totalReports") or 0),"users":int(d.get("numDistinctUsers") or 0),"country":d.get("countryCode") or "","isp":d.get("isp") or "","usage":d.get("usageType") or "","domain":d.get("domain") or "","tor":bool(d.get("isTor")),"whitelisted":bool(d.get("isWhitelisted")),"last_reported":d.get("lastReportedAt") or ""}
-    with _abuse_lock:_abuse_cache[ip]=(now,out)
+    _abuse_db("INSERT OR REPLACE INTO abuse_cache(ip,data,at) VALUES(?,?,?)",(ip,json.dumps(out),now))
     return out
+
+def ip_reputation(ips,lookup):
+    """Hasil dari cache; pengecekan baru hanya bila lookup=True dan dibatasi ABUSE_MAX_NEW per permintaan."""
+    results={};pending=[]
+    for ip in dict.fromkeys(i.strip() for i in ips if i.strip()):
+        r=abuse_check(ip,fetch=False);results[ip]=r
+        if r.get("status")=="pending":pending.append(ip)
+    if lookup and pending:
+        batch=pending[:ABUSE_MAX_NEW]
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            for ip,r in zip(batch,pool.map(abuse_check,batch)):results[ip]=r
+    return {"enabled":bool(ABUSE_KEY),"results":results,"quota":{"used":abuse_used_today(),"limit":ABUSE_DAILY_LIMIT}}
 
 def get_ioc(value):
     value=value.strip()[:250]
@@ -456,6 +485,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS case_timeline(id INTEGER PRIMARY KEY AUTOINCREMENT,case_id TEXT NOT NULL,at TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,details TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,details TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS sessions(sid TEXT PRIMARY KEY,user TEXT NOT NULL,created REAL NOT NULL,seen REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS abuse_cache(ip TEXT PRIMARY KEY,data TEXT NOT NULL,at REAL NOT NULL);
         """)
 
 def audit(action,target,details='',actor='system'):
@@ -598,6 +628,10 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self,200,{"total":total,"offset":offset,"limit":limit,"window":ES_WINDOW,"alerts":docs})
             except ValueError:json_response(self,400,{"error":"Parameter tidak valid"})
             except Exception as exc:logging.exception("alerts failed: %s",type(exc).__name__);json_response(self,503,{"error":"Alert query unavailable"})
+            return
+        if path=="/api/ip-reputation":
+            try:json_response(self,200,ip_reputation(qs.get('ips',[''])[0].split(',')[:40],qs.get('lookup',['0'])[0]=='1'))
+            except Exception as exc:logging.exception("ip reputation failed: %s",type(exc).__name__);json_response(self,503,{"error":"Reputasi IP tidak tersedia"})
             return
         if path=="/api/alert-detail":
             try:json_response(self,200,alert_detail(qs.get('alert_id',[''])[0]))

@@ -583,6 +583,7 @@ body::after {
             <th>Rule</th>
             <th class="soc-opt">Sumber</th>
             <th class="soc-opt">Aset</th>
+            <th class="soc-opt">IP sumber · AbuseIPDB</th>
             <th>Status triage</th>
           </tr></thead>
           <tbody id="tb-alerts"></tbody>
@@ -714,13 +715,15 @@ body::after {
 
     <section class="soc-card">
       <h2>IP sumber teratas</h2>
-      <p class="soc-card-note">IP sumber yang muncul di alert terbaru. Klik Cari untuk melihat semua kemunculannya.</p>
+      <p class="soc-card-note">IP sumber yang muncul di alert terbaru. Klik Cari untuk melihat semua kemunculannya. Skor penyalahgunaan (0–100) diambil otomatis dari AbuseIPDB dan di-cache 24 jam; skor 50 ke atas ditandai merah.</p>
+      <p class="soc-card-note" id="ti-abuse-note"></p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
             <th>IP</th>
             <th class="soc-num">Alert</th>
             <th>Severity tertinggi</th>
+            <th>AbuseIPDB</th>
             <th class="soc-num soc-opt">Terakhir</th>
             <th></th>
           </tr></thead>
@@ -1579,6 +1582,44 @@ function alertStats() {
   $('badge-alerts').hidden = attention === 0;
 }
 
+// ---- Reputasi IP (AbuseIPDB lewat api/ip-reputation; cache di server) ----
+const REP = {};
+const REPQ = {enabled: null, used: 0, limit: 0};
+
+function repText(r) {
+  if (!r) return null;
+  if (r.status === 'ok') return {text: r.score + '/100' + (r.reports ? ' · ' + fmtInt(r.reports) + ' lap.' : ''), bad: r.score >= 50,
+    tip: [r.country, r.isp, r.usage, r.tor ? 'Tor' : '', r.last_reported ? 'laporan terakhir ' + fmtTime(r.last_reported) : ''].filter(Boolean).join(' · ')};
+  if (r.status === 'skipped') return {text: 'IP privat', bad: false, tip: r.reason || ''};
+  if (r.status === 'error') return {text: 'gagal', bad: false, tip: r.reason || ''};
+  if (r.status === 'disabled') return {text: 'nonaktif', bad: false, tip: 'API key AbuseIPDB belum dipasang di server'};
+  return null;
+}
+
+function repCell(cell, ip) {
+  if (!ip) { cell.textContent = '—'; return; }
+  cell.textContent = ip;
+  const t = repText(REP[ip]);
+  if (!t) return;
+  const sp = el('span', t.bad ? 'soc-bad' : 'soc-card-note', ' · ' + t.text, cell);
+  if (t.tip) sp.title = t.tip;
+}
+
+async function loadRep(ips, lookup) {
+  const list = [...new Set(ips.filter(Boolean))].filter((ip) => lookup ? !REP[ip] || REP[ip].status === 'pending' : !REP[ip]).slice(0, 40);
+  if (!list.length) return false;
+  try {
+    const res = await getJson('api/ip-reputation?lookup=' + (lookup ? 1 : 0) + '&ips=' + encodeURIComponent(list.join(',')));
+    let changed = false;
+    Object.entries(res.results || {}).forEach(([ip, r]) => {
+      if (r.status !== 'pending' && (!REP[ip] || REP[ip].status !== r.status)) changed = true;
+      if (r.status !== 'pending') REP[ip] = r;
+    });
+    REPQ.enabled = res.enabled; REPQ.used = res.quota.used; REPQ.limit = res.quota.limit;
+    return changed;
+  } catch (e) { return false; }
+}
+
 const AM = {rows: [], total: 0, page: 0, window: 10000, seq: 0, error: ''};
 const SEV_LEVELS = {Critical: [12, null], High: [8, 12], Medium: [4, 8], Low: [3, 4]};
 const findAlert = (id) => AM.rows.find((a) => a.id === id) || DATA.alerts.find((a) => a.id === id);
@@ -1595,13 +1636,14 @@ function drawAlerts() {
     td(tr, r.rule);
     td(tr, r.source, 'soc-opt');
     td(tr, r.asset, 'soc-opt soc-mono');
+    repCell(td(tr, null, 'soc-opt soc-mono'), r.srcip);
     statusChip(tr, r.status);
     tr.addEventListener('click', () => { selAlert = r.id; drawAlerts(); drawTriage(); $('tr-card').scrollIntoView({behavior: 'smooth', block: 'start'}); });
   });
   const size = amSize();
   const pages = Math.max(1, Math.ceil(Math.min(AM.total, AM.window) / size));
   $('am-nomatch').hidden = true;
-  if (!AM.rows.length) emptyRow(tb, 7, AM.error || 'Tidak ada alert yang cocok dengan filter ini.');
+  if (!AM.rows.length) emptyRow(tb, 8, AM.error || 'Tidak ada alert yang cocok dengan filter ini.');
   $('am-prev').disabled = AM.page <= 0;
   $('am-next').disabled = AM.page >= pages - 1;
   $('am-page').textContent = AM.rows.length
@@ -1633,6 +1675,7 @@ async function loadAlertPage() {
     AM.rows = []; AM.total = 0; AM.error = 'Tidak bisa memuat alert: ' + (e.message || e);
   }
   drawAlerts();
+  loadRep(AM.rows.map((r) => r.srcip), false).then((changed) => { if (changed && seq === AM.seq) drawAlerts(); });
 }
 
 function fillAgents() {
@@ -1933,12 +1976,27 @@ function drawIntel() {
     td(tr, s.ip, 'soc-mono');
     td(tr, fmtInt(s.alerts), 'soc-num');
     sevChip(tr, s.severity);
+    const rc = td(tr, null, 'soc-mono');
+    const rt = repText(REP[s.ip]);
+    rc.textContent = rt ? rt.text : '…';
+    if (rt) { if (rt.bad) rc.classList.add('soc-bad'); if (rt.tip) rc.title = rt.tip; }
     td(tr, fmtTime(s.last), 'soc-num soc-opt');
     const b = el('button', 'soc-btn', 'Cari', td(tr, null));
     b.type = 'button';
     b.addEventListener('click', () => { $('ti-q').value = s.ip; lookup(s.ip); });
   });
-  if (!DATA.top_sources.length) emptyRow(tb, 5, 'Tidak ada IP sumber di alert terbaru.');
+  if (!DATA.top_sources.length) emptyRow(tb, 6, 'Tidak ada IP sumber di alert terbaru.');
+  const note = $('ti-abuse-note');
+  note.textContent = REPQ.enabled === false ? 'AbuseIPDB belum diaktifkan di server.' : REPQ.enabled ? 'Pemakaian AbuseIPDB hari ini: ' + fmtInt(REPQ.used) + ' dari ' + fmtInt(REPQ.limit) + ' pengecekan (reset 07:00 WIB).' : '';
+}
+
+let sourcesRepBusy = false;
+async function enrichSources() {
+  if (sourcesRepBusy || !LIVE.on || !DATA.top_sources.length) return;
+  sourcesRepBusy = true;
+  const changed = await loadRep(DATA.top_sources.map((s) => s.ip), true);
+  sourcesRepBusy = false;
+  if (changed || REPQ.enabled != null) { drawIntel(); drawAlerts(); }
 }
 
 async function lookup(raw) {
@@ -2619,6 +2677,7 @@ drawOverview();
 alertStats();
 fillAgents();
 loadAlertPage();
+enrichSources();
 drawAI();
 drawIntel();
 drawCases();
