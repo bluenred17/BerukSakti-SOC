@@ -3895,7 +3895,7 @@ function chatMode() {
   $('chat-sub').textContent = on ? 'AI · ' + a.model + ' · data Wazuh' : 'Mode aturan · data Wazuh';
   $('chat-foot').textContent = on
     ? 'Dijawab model AI dari ringkasan data SOC. AI bisa keliru, verifikasi sebelum bertindak. Pemakaian dicatat di Administration.'
-    : 'Jawaban disusun dari data Wazuh dengan aturan kata kunci' + (a ? ' (AI belum aktif: ' + (a.reason || 'tidak tersedia') + ').' : '.');
+    : 'Jawaban disusun dari data Wazuh dengan aturan kata kunci' + (a ? (a.allowed === false ? ' (' + a.reason + ').' : ' (AI belum aktif: ' + (a.reason || 'tidak tersedia') + ').') : '.');
 }
 
 async function loadChatAi() {

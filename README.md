@@ -47,6 +47,7 @@ Setiap orang punya akun sendiri; izin ditentukan oleh peran dan ditegakkan di se
 | Kelola integrasi* | ✓ | — | — | — | — | — |
 | Kelola pengguna & peran | ✓ | — | — | — | — | — |
 | Lihat audit log | ✓ | ✓ | — | — | — | ✓ |
+| Pakai chat AI | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 
 \* Izin sudah ada, fiturnya belum. Pengaturan playbook (mode, syarat) memakai izin "Kelola integrasi", jadi hanya administrator.
 

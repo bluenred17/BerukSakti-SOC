@@ -57,8 +57,8 @@ ALLOWED_ORIGINS={o.strip() for o in os.environ.get("ALLOWED_ORIGINS","wazuh.toys
 COOKIE_NAME="soc_session"
 # RBAC: urutan izin sama dengan urutan digit pada tiap peran (1 = diizinkan).
 # Kolom ketiga: apakah fitur di balik izin itu sudah ada di dashboard.
-PERMISSIONS=[("view","Lihat dashboard",True),("triage","Triage alert",True),("cases","Kelola insiden & kasus",True),("playbook","Jalankan playbook",True),("approve","Setujui aksi otomatis",True),("integrations","Kelola integrasi",False),("users","Kelola pengguna & peran",True),("audit","Lihat audit log",True)]
-ROLE_DEFS=[("admin","Administrator","11111111"),("manager","SOC Manager","11111001"),("analyst_t3","SOC Analyst T3","11111000"),("analyst_t2","SOC Analyst T2","11110000"),("analyst_t1","SOC Analyst T1","11000000"),("readonly","Read-only","10000001")]
+PERMISSIONS=[("view","Lihat dashboard",True),("triage","Triage alert",True),("cases","Kelola insiden & kasus",True),("playbook","Jalankan playbook",True),("approve","Setujui aksi otomatis",True),("integrations","Kelola integrasi",False),("users","Kelola pengguna & peran",True),("audit","Lihat audit log",True),("ai","Pakai chat AI",True)]
+ROLE_DEFS=[("admin","Administrator","111111111"),("manager","SOC Manager","111110011"),("analyst_t3","SOC Analyst T3","111110001"),("analyst_t2","SOC Analyst T2","111100001"),("analyst_t1","SOC Analyst T1","110000001"),("readonly","Read-only","100000010")]
 ROLE_ALIAS={"viewer":"readonly","analyst":"analyst_t2"}
 
 def role_info(role):
@@ -1586,7 +1586,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:logging.exception("ai usage failed: %s",type(exc).__name__);json_response(self,503,{"error":"Data penggunaan AI tidak tersedia"})
             return
         if path=="/api/ai/status":
-            try:json_response(self,200,ai_status())
+            if not can(sess,"ai"):json_response(self,200,{"enabled":False,"allowed":False,"reason":"Peran %s tidak boleh memakai AI"%sess.get("role_name","Anda")});return
+            try:json_response(self,200,dict(ai_status(),allowed=True))
             except Exception as exc:logging.exception("ai status failed: %s",type(exc).__name__);json_response(self,503,{"error":"Status AI tidak tersedia"})
             return
         if path=="/api/ai/analysis":
@@ -1679,7 +1680,7 @@ class Handler(BaseHTTPRequestHandler):
             if sess:audit("logout",sess["user"],self.client_ip(),actor=sess["user"])
             json_response(self,200,{"ok":True},[("Set-Cookie",self.cookie_header("",0))]);return
         if not sess:json_response(self,401,{"error":"Login diperlukan"});return
-        need="integrations" if path=="/api/sla" else "triage" if path in ("/api/triage","/api/ai/analyze") else "cases" if path.startswith("/api/cases") else "users" if path.startswith("/api/users/") else "integrations" if path=="/api/playbook/config" else "approve" if path.startswith("/api/playbook/actions/") else None
+        need="ai" if path=="/api/ai/chat" else "integrations" if path=="/api/sla" else "triage" if path in ("/api/triage","/api/ai/analyze") else "cases" if path.startswith("/api/cases") else "users" if path.startswith("/api/users/") else "integrations" if path=="/api/playbook/config" else "approve" if path.startswith("/api/playbook/actions/") else None
         if need and not can(sess,need):json_response(self,403,{"error":"Peran "+sess["role_name"]+" tidak punya izin untuk aksi ini"});return
         if path.startswith("/api/users/"):self.users_action(path.rsplit("/",1)[-1],body,sess);return
         if path=="/api/playbook/config":
