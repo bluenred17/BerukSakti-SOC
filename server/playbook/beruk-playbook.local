@@ -1,0 +1,13 @@
+# Jail khusus playbook Beruk Sakti: tidak membaca log apa pun, hanya menerima ban manual dari pembantu root.
+# Pasang di /etc/fail2ban/jail.d/beruk-playbook.local
+[beruk-playbook]
+enabled   = true
+backend   = polling
+logpath   = /dev/null
+filter    = beruk-playbook
+maxretry  = 1
+findtime  = 1m
+# Ban sementara 24 jam (kedaluwarsa otomatis oleh fail2ban); ubah di sini bila perlu.
+bantime   = 86400
+# Blokir semua port dari IP itu lewat UFW.
+banaction = ufw[blocktype=deny]

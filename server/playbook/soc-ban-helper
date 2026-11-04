@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""Pembantu root untuk playbook pemblokiran IP Beruk Sakti.
+
+Dashboard (user socauto) tidak punya hak root. Ia hanya menaruh berkas permintaan kecil di REQUEST_DIR; pembantu ini
+(berjalan sebagai root) membaca, MEMERIKSA ULANG semuanya dengan kebijakan yang hanya root bisa ubah, lalu menjalankan ban
+atau unban di satu jail fail2ban khusus. Jadi kalau dashboard dibobol, ia tetap tidak bisa memblokir IP yang dilindungi.
+
+Aturan yang dipaksakan di sini (bukan di dashboard):
+- hanya alamat IP publik (is_global); IP privat, loopback, multicast, dan sejenisnya ditolak;
+- IP di daftar putih (kebijakan + alamat server ini sendiri) tidak pernah diblokir;
+- batas ban per jam dan batas total ban aktif;
+- hanya satu jail, dan hanya aksi ban/unban IP; tidak ada perintah lain.
+"""
+import argparse
+import ipaddress
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import time
+
+POLICY = "/etc/soc-automation/ban-policy.json"
+NAME_RE = re.compile(r"^[0-9a-f]{24}\.json$")
+MAX_REQUEST_BYTES = 4096
+DEFAULT_POLICY = {
+    "jail": "beruk-playbook",
+    "fail2ban_client": "/usr/bin/fail2ban-client",
+    "request_dir": "/var/lib/soc-automation-dashboard/ban-requests",
+    "result_dir": "/var/lib/soc-automation-dashboard/ban-results",
+    "log_file": "/var/lib/soc-automation-dashboard/ban-helper-log.jsonl",
+    "heartbeat_file": "/var/lib/soc-automation-dashboard/ban-helper.heartbeat",
+    "service_user": "socauto",
+    "allowlist": [],
+    "max_bans_per_hour": 20,
+    "max_active_bans": 200,
+}
+
+
+def load_policy(path):
+    pol = dict(DEFAULT_POLICY)
+    with open(path, encoding="utf-8") as f:
+        pol.update(json.load(f))
+    return pol
+
+
+def local_addresses():
+    """Alamat milik server ini sendiri; tidak pernah boleh diblokir."""
+    out = []
+    try:
+        text = subprocess.run(["ip", "-o", "addr"], capture_output=True, text=True, timeout=5).stdout
+        for m in re.finditer(r"inet6?\s+([0-9a-fA-F:.]+)/", text):
+            out.append(m.group(1))
+    except Exception:
+        pass
+    return out
+
+
+def networks(entries):
+    nets = []
+    for e in entries:
+        try:
+            nets.append(ipaddress.ip_network(str(e), strict=False))
+        except ValueError:
+            continue
+    return nets
+
+
+def check_ip(ip, pol, test_allow_nonglobal=False):
+    """(None, alamat) bila boleh diproses, atau (alasan_ditolak, None)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return "bukan alamat IP yang valid", None
+    if str(addr) != ip:
+        return "format IP tidak baku", None
+    if not addr.is_global and not test_allow_nonglobal:
+        return "bukan IP publik", None
+    return None, addr
+
+
+def run_client(pol, *args):
+    out = subprocess.run([pol["fail2ban_client"], *args], capture_output=True, text=True, timeout=15)
+    if out.returncode != 0:
+        raise RuntimeError((out.stderr or out.stdout).strip()[:200] or "fail2ban-client gagal")
+    return out.stdout.strip()
+
+
+def active_bans(pol):
+    text = run_client(pol, "status", pol["jail"])
+    m = re.search(r"Currently banned:\s*(\d+)", text)
+    return int(m.group(1)) if m else 0
+
+
+def bans_last_hour(pol):
+    n, cutoff = 0, time.time() - 3600
+    try:
+        with open(pol["log_file"], encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("action") == "ban" and r.get("status") == "banned" and r.get("at", 0) >= cutoff:
+                    n += 1
+    except FileNotFoundError:
+        pass
+    return n
+
+
+def append_log(pol, rec):
+    fd = os.open(pol["log_file"], os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o640)
+    try:
+        os.write(fd, (json.dumps(rec) + "\n").encode())
+    finally:
+        os.close(fd)
+
+
+def handle(req, pol, test_allow_nonglobal):
+    """Proses satu permintaan yang sudah di-parse. Mengembalikan dict hasil."""
+    res = {"id": req.get("id", ""), "at": time.time(), "ok": False, "status": "rejected", "message": ""}
+    action = req.get("action")
+    ip = str(req.get("ip", ""))
+    if action not in ("ban", "unban"):
+        res["message"] = "aksi tidak dikenal"
+        return res
+    why, addr = check_ip(ip, pol, test_allow_nonglobal)
+    if why:
+        res["message"] = why
+        return res
+    if action == "ban":
+        protected = networks(pol.get("allowlist", [])) + networks(local_addresses())
+        if any(addr in n for n in protected if n.version == addr.version):
+            res["message"] = "IP ada di daftar putih"
+            return res
+        if bans_last_hour(pol) >= int(pol["max_bans_per_hour"]):
+            res["message"] = "batas ban per jam tercapai"
+            return res
+        try:
+            if active_bans(pol) >= int(pol["max_active_bans"]):
+                res["message"] = "batas ban aktif tercapai"
+                return res
+            out = run_client(pol, "set", pol["jail"], "banip", ip)
+        except Exception as exc:
+            res.update(status="error", message=str(exc)[:200])
+            return res
+        res.update(ok=True, status="banned" if out.strip() not in ("0",) else "already", message="IP diblokir di jail " + pol["jail"])
+    else:
+        try:
+            out = run_client(pol, "set", pol["jail"], "unbanip", ip)
+        except Exception as exc:
+            res.update(status="error", message=str(exc)[:200])
+            return res
+        res.update(ok=True, status="unbanned", message="ban dicabut")
+    append_log(pol, {"at": time.time(), "action": action, "ip": ip, "id": req.get("id"), "by": str(req.get("by", ""))[:64], "reason": str(req.get("reason", ""))[:200], "status": res["status"]})
+    return res
+
+
+def process_dir(pol, test_allow_nonglobal=False):
+    """Baca semua permintaan di request_dir lewat file descriptor direktori (tanpa mengikuti symlink)."""
+    svc_uid = None
+    try:
+        import pwd
+        svc_uid = pwd.getpwnam(pol["service_user"]).pw_uid
+    except Exception:
+        pass
+    dfd = os.open(pol["request_dir"], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        st = os.fstat(dfd)
+        if st.st_uid not in (0, svc_uid):
+            return 0
+        done = 0
+        for name in os.listdir(dfd):
+            if name.startswith("."):
+                continue  # berkas sementara yang sedang ditulis dashboard
+            res = None
+            try:
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dfd)
+                try:
+                    fst = os.fstat(fd)
+                    if not stat.S_ISREG(fst.st_mode) or fst.st_size > MAX_REQUEST_BYTES or fst.st_uid not in (0, svc_uid):
+                        raise ValueError("berkas tidak sah")
+                    data = os.read(fd, MAX_REQUEST_BYTES + 1)
+                finally:
+                    os.close(fd)
+                if not NAME_RE.match(name):
+                    raise ValueError("nama berkas tidak sah")
+                req = json.loads(data.decode("utf-8"))
+                if not isinstance(req, dict) or req.get("id") != name[:-5]:
+                    raise ValueError("id tidak cocok")
+                res = handle(req, pol, test_allow_nonglobal)
+            except Exception as exc:
+                res = {"id": name[:-5] if NAME_RE.match(name) else "", "at": time.time(), "ok": False, "status": "rejected", "message": "permintaan tidak sah: " + str(exc)[:80]}
+            finally:
+                try:
+                    os.unlink(name, dir_fd=dfd)
+                except OSError:
+                    pass
+            if res and NAME_RE.match(name):
+                write_result(pol, name[:-5], res)
+            done += 1
+        return done
+    finally:
+        os.close(dfd)
+
+
+def write_result(pol, rid, res):
+    rdir = pol["result_dir"]
+    tmp = os.path.join(rdir, "." + rid + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o640)
+    try:
+        os.write(fd, json.dumps(res).encode())
+    finally:
+        os.close(fd)
+    try:
+        import grp
+        os.chown(tmp, 0, grp.getgrnam(DEFAULT_POLICY["service_user"]).gr_gid)
+    except Exception:
+        pass
+    os.replace(tmp, os.path.join(rdir, rid + ".json"))
+
+
+def cleanup_results(pol):
+    cutoff = time.time() - 86400
+    try:
+        for n in os.listdir(pol["result_dir"]):
+            p = os.path.join(pol["result_dir"], n)
+            if os.path.isfile(p) and not os.path.islink(p) and os.path.getmtime(p) < cutoff:
+                os.unlink(p)
+    except OSError:
+        pass
+
+
+def heartbeat(pol):
+    try:
+        with open(pol["heartbeat_file"], "w", encoding="utf-8") as f:
+            f.write(str(int(time.time())))
+        os.chmod(pol["heartbeat_file"], 0o644)
+    except OSError:
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--policy", default=POLICY)
+    ap.add_argument("--daemon", action="store_true", help="berjalan terus; dipakai oleh systemd")
+    ap.add_argument("--once", action="store_true", help="proses permintaan yang ada lalu keluar (untuk uji)")
+    ap.add_argument("--test-allow-nonglobal", action="store_true", help="HANYA untuk uji manual: izinkan IP non-publik; tidak pernah dipakai unit systemd")
+    args = ap.parse_args()
+    if args.test_allow_nonglobal and args.daemon:
+        sys.exit("--test-allow-nonglobal tidak boleh dipakai bersama --daemon")
+    pol = load_policy(args.policy)
+    if args.once:
+        print(process_dir(pol, args.test_allow_nonglobal), "permintaan diproses")
+        return
+    last_clean = 0
+    while True:
+        try:
+            pol = load_policy(args.policy)
+            heartbeat(pol)
+            process_dir(pol)
+            if time.time() - last_clean > 3600:
+                cleanup_results(pol)
+                last_clean = time.time()
+        except Exception as exc:
+            print("galat:", str(exc)[:200], file=sys.stderr, flush=True)
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()

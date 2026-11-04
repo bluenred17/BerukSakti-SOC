@@ -233,6 +233,11 @@ body::after {
 .detail-grid dt { color: var(--muted); }
 .detail-grid dd { margin: 0; overflow-wrap: anywhere; }
 .detail-log { max-height: 220px; overflow: auto; margin: 6px 0 10px; padding: 10px; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(0, 0, 0, .28); border: 1px solid var(--line); border-radius: var(--radius); }
+.aiu-bar { height: 6px; min-width: 2px; border-radius: 3px; background: var(--accent); }
+.ai-box { margin: 10px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius); background: rgba(91, 157, 224, .06); display: grid; gap: 8px; }
+.ai-box p { margin: 0; }
+.ai-box ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; }
+.ai-box .ai-h { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 4px 0 0; }
 .detail-h { margin: 14px 0 4px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 #tr-detail details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .am-chk { width: 30px; text-align: center; }
@@ -841,8 +846,63 @@ body::after {
 
   <div class="soc-grid">
     <section class="soc-card soc-wide">
-      <h2>Otomasi respons</h2>
-      <p class="soc-card-note">Dashboard ini hanya membaca Wazuh. Playbook, persetujuan aksi, dan riwayat eksekusi belum ada sumber datanya, jadi tidak ditampilkan. Satu-satunya otomasi yang bisa dibaca adalah konfigurasi active response di Wazuh manager.</p>
+      <h2>Playbook: blokir IP sumber</h2>
+      <p class="soc-card-note" id="pb-rule"></p>
+      <div class="soc-tiles">
+        <div class="soc-tile"><span class="soc-tile-label">Mode</span><span class="soc-tile-value" id="pb-t-mode" style="font-size:1.2rem">—</span><span class="soc-tile-sub" id="pb-t-mode-sub"></span></div>
+        <div class="soc-tile"><span class="soc-tile-label">Menunggu persetujuan</span><span class="soc-tile-value" id="pb-t-prop">—</span><span class="soc-tile-sub">usulan ban</span></div>
+        <div class="soc-tile"><span class="soc-tile-label">Diblokir sekarang</span><span class="soc-tile-value" id="pb-t-ban">—</span><span class="soc-tile-sub">oleh playbook</span></div>
+        <div class="soc-tile"><span class="soc-tile-label">Simulasi, 24 jam</span><span class="soc-tile-value" id="pb-t-dry">—</span><span class="soc-tile-sub">IP yang akan diblokir</span></div>
+        <div class="soc-tile"><span class="soc-tile-label">Pembantu root</span><span class="soc-tile-value" id="pb-t-helper" style="font-size:1.2rem">—</span><span class="soc-tile-sub" id="pb-t-helper-sub"></span></div>
+      </div>
+      <p class="soc-card-note" id="pb-safety"></p>
+      <div id="pb-form" hidden>
+        <h3 class="detail-h">Pengaturan (administrator)</h3>
+        <div class="soc-tools">
+          <select id="pb-mode" class="soc-select" aria-label="Mode playbook">
+            <option value="off">Mati</option>
+            <option value="dry-run">Simulasi (hanya mencatat)</option>
+            <option value="approval">Persetujuan manual</option>
+            <option value="auto">Otomatis penuh</option>
+          </select>
+          <select id="pb-level" class="soc-select" aria-label="Severity minimum">
+            <option value="8">High ke atas (level 8+)</option>
+            <option value="10">Level 10+</option>
+            <option value="12">Critical saja (level 12+)</option>
+          </select>
+          <label class="soc-card-note">minimal <input id="pb-alerts" class="soc-search" type="number" min="1" max="1000" style="width:5rem;flex:none" aria-label="Minimal alert"> alert</label>
+          <label class="soc-card-note">dalam <input id="pb-window" class="soc-search" type="number" min="1" max="1440" style="width:5rem;flex:none" aria-label="Jendela menit"> menit</label>
+        </div>
+        <div class="soc-tools">
+          <input id="pb-agents" class="soc-search" type="text" placeholder="Agen yang dipantau, pisahkan dengan koma" aria-label="Agen yang dipantau">
+          <label class="soc-card-note">skor AbuseIPDB min <input id="pb-abuse" class="soc-search" type="number" min="0" max="100" style="width:5rem;flex:none" aria-label="Skor AbuseIPDB minimum"> (0 = tidak dipakai)</label>
+          <label class="soc-card-note">maks usulan/jam <input id="pb-max" class="soc-search" type="number" min="1" max="100" style="width:5rem;flex:none" aria-label="Maksimal usulan per jam"></label>
+          <button type="button" class="soc-btn primary" id="pb-save">Simpan pengaturan</button>
+          <span class="soc-card-note" id="pb-msg" role="status"></span>
+        </div>
+      </div>
+      <h3 class="detail-h">Usulan dan riwayat</h3>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>IP</th>
+            <th>Status</th>
+            <th>Alasan</th>
+            <th class="soc-num soc-opt">AbuseIPDB</th>
+            <th class="soc-opt">Kategori AbuseIPDB</th>
+            <th class="soc-num soc-opt">Berakhir</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="tb-pb"></tbody>
+        </table>
+      </div>
+      <p class="soc-card-note" id="pb-actmsg" role="status"></p>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Active response Wazuh</h2>
+      <p class="soc-card-note">Playbook di atas memblokir lewat fail2ban dan UFW di server ini saja. Konfigurasi active response bawaan Wazuh (di ossec.conf manager) hanya dibaca dashboard, tidak diubah.</p>
     </section>
   </div>
 </section>
@@ -1063,6 +1123,100 @@ body::after {
           <tbody id="tb-admin-info"></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="soc-card soc-wide" id="aiu-card">
+      <h2>Penggunaan AI</h2>
+      <p class="soc-card-note" id="aiu-note">Memuat…</p>
+      <div class="soc-tiles">
+        <div class="soc-tile">
+          <span class="soc-tile-label">Analisis hari ini</span>
+          <span class="soc-tile-value"><span id="aiu-t-calls">—</span><span class="soc-unit">dari <span id="aiu-t-limit">—</span></span></span>
+          <span class="soc-tile-sub">batas harian</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Token hari ini</span>
+          <span class="soc-tile-value" id="aiu-t-tokens">—</span>
+          <span class="soc-tile-sub"><b id="aiu-t-in">—</b> masuk · <b id="aiu-t-out">—</b> keluar</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">14 hari</span>
+          <span class="soc-tile-value" id="aiu-t-14">—</span>
+          <span class="soc-tile-sub"><b id="aiu-t-14calls">—</b> analisis</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Perkiraan biaya, 14 hari</span>
+          <span class="soc-tile-value" id="aiu-t-cost">—</span>
+          <span class="soc-tile-sub" id="aiu-t-cost-sub">harga belum diatur</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Model</span>
+          <span class="soc-tile-value" id="aiu-t-model" style="font-size:1.1rem">—</span>
+          <span class="soc-tile-sub" id="aiu-t-provider">penyedia</span>
+        </div>
+      </div>
+
+      <h3 class="detail-h">Per hari (14 hari terakhir)</h3>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Hari (UTC)</th>
+            <th class="soc-num">Analisis</th>
+            <th class="soc-num">Token masuk</th>
+            <th class="soc-num">Token keluar</th>
+            <th class="soc-num">Total</th>
+            <th class="soc-opt" style="width:30%"></th>
+          </tr></thead>
+          <tbody id="tb-aiu-days"></tbody>
+        </table>
+      </div>
+
+      <h3 class="detail-h">Per pengguna (30 hari)</h3>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Pengguna</th>
+            <th class="soc-num">Panggilan</th>
+            <th class="soc-num">Token masuk</th>
+            <th class="soc-num">Token keluar</th>
+            <th class="soc-num soc-opt">Gagal</th>
+            <th class="soc-num soc-opt">Biaya</th>
+          </tr></thead>
+          <tbody id="tb-aiu-users"></tbody>
+        </table>
+      </div>
+
+      <h3 class="detail-h">Per model (30 hari)</h3>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Model</th>
+            <th class="soc-num">Panggilan</th>
+            <th class="soc-num">Token masuk</th>
+            <th class="soc-num">Token keluar</th>
+            <th class="soc-num soc-opt">Gagal</th>
+            <th class="soc-num soc-opt">Biaya</th>
+          </tr></thead>
+          <tbody id="tb-aiu-models"></tbody>
+        </table>
+      </div>
+
+      <h3 class="detail-h">Panggilan terbaru</h3>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>Pengguna</th>
+            <th class="soc-opt">Model</th>
+            <th class="soc-opt">Alert</th>
+            <th class="soc-num">Token masuk / keluar</th>
+            <th>Status</th>
+            <th class="soc-num soc-opt">Durasi</th>
+          </tr></thead>
+          <tbody id="tb-aiu-recent"></tbody>
+        </table>
+      </div>
+      <div class="soc-tools"><button type="button" class="soc-btn" id="aiu-refresh">Muat ulang</button></div>
     </section>
 
     <section class="soc-card soc-wide">
@@ -1977,6 +2131,70 @@ function factRows(dl, rows) {
   });
 }
 
+// ---- Analisis AI per alert (api/ai/*): saran dari model, bukan tindakan otomatis ----
+const AI_TONE = {malicious: 'tone-bad', suspicious: 'tone-warn', benign: 'tone-ok', needs_more_data: 'tone-muted'};
+const AI_LABEL = {malicious: 'Berbahaya', suspicious: 'Mencurigakan', benign: 'Jinak', needs_more_data: 'Perlu data lagi'};
+const AI_CONF = {low: 'keyakinan rendah', medium: 'keyakinan sedang', high: 'keyakinan tinggi'};
+
+function aiList(parent, title, items) {
+  if (!items || !items.length) return;
+  el('p', 'ai-h', title, parent);
+  const ul = el('ul', null, null, parent);
+  items.forEach((t) => el('li', null, t, ul));
+}
+
+async function drawAI_panel(box, r, seq) {
+  box.replaceChildren();
+  el('h3', 'ai-h', 'Analisis AI', box);
+  const body = el('div', null, null, box);
+  el('p', 'soc-card-note', 'Memuat…', body);
+  let st = null, cached = null;
+  try { [st, cached] = await Promise.all([getJson('api/ai/status').catch(() => null), getJson('api/ai/analysis?alert_id=' + encodeURIComponent(r.id)).catch(() => null)]); } catch (e) { /* tampil tanpa status */ }
+  if (seq !== detailSeq) return;
+  const render = (res, msg) => {
+    body.replaceChildren();
+    if (res && res.refused) {
+      el('p', 'soc-bad', 'Model menolak menganalisis alert ini (' + res.reason + '). Nilai manual.', body);
+    } else if (res && res.analysis) {
+      const a = res.analysis;
+      const head = el('p', null, null, body);
+      el('span', 'soc-chip ' + (AI_TONE[a.verdict] || 'tone-muted'), AI_LABEL[a.verdict] || a.verdict, head);
+      el('span', 'soc-card-note', ' ' + (AI_CONF[a.confidence] || '') + ' · ' + res.model + ' · ' + fmtTime(res.at) + ' oleh ' + res.requested_by, head);
+      el('p', null, a.summary, body);
+      aiList(body, 'Bukti', a.evidence);
+      aiList(body, 'Langkah yang disarankan', a.recommended_actions);
+      if (a.false_positive_notes) { el('p', 'ai-h', 'Kemungkinan jinak', body); el('p', null, a.false_positive_notes, body); }
+      aiList(body, 'Data yang masih dibutuhkan', a.missing_data);
+      el('p', 'soc-card-note', 'Penilaian AI hanya saran dan bisa keliru. Verifikasi sebelum bertindak; dashboard tidak menjalankan tindakan apa pun dari hasil ini.', body);
+      if (hasPerm('triage')) {
+        const use = el('button', 'soc-btn', 'Pakai sebagai catatan triage', body);
+        use.type = 'button';
+        use.addEventListener('click', () => { $('tr-text').value = ('AI (' + (AI_LABEL[a.verdict] || a.verdict) + '): ' + a.summary).slice(0, 2000); $('tr-msg').textContent = 'Catatan diisi dari analisis AI. Klik Simpan triage untuk menyimpan.'; });
+      }
+    } else if (!msg) {
+      el('p', 'soc-card-note', st && !st.enabled ? 'AI belum aktif: ' + st.reason + '.' : 'Belum dianalisis. Isi alert (rule, log, IP) dikirim ke penyedia AI' + (st ? ' (' + st.provider + ', model ' + st.model + ')' : '') + '. Hasilnya disimpan, jadi membuka alert ini lagi tidak memakai kuota.', body);
+    }
+    if (msg) el('p', 'soc-card-note', msg, body);
+    if (hasPerm('triage') && st && st.enabled) {
+      const row = el('div', 'soc-tools', null, body);
+      const b = el('button', 'soc-btn primary', res && res.analysis ? 'Analisis ulang' : 'Analisis dengan AI', row);
+      b.type = 'button';
+      el('span', 'soc-card-note', 'Hari ini ' + fmtInt(st.used_today) + ' dari ' + fmtInt(st.limit) + ' analisis', row);
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        b.textContent = 'Menganalisis… (bisa 20–60 detik)';
+        try {
+          const out = await postJson('api/ai/analyze', {alert_id: r.id, force: !!(res && res.analysis)});
+          if (seq !== detailSeq) return;
+          if (!out.cached) st.used_today += 1;
+          render(out, '');
+        } catch (e) { if (seq === detailSeq) render(res, e.message); }
+      });
+    }
+  };
+  render(cached && cached.analysis ? cached : null, '');
+}
+
 async function loadDetail(r) {
   const box = $('tr-detail');
   const seq = ++detailSeq;
@@ -1997,6 +2215,9 @@ async function loadDetail(r) {
   const mitre = src.rule && src.rule.mitre || {};
   const ip = pick(src, 'data.srcip') || pick(src, 'data.src_ip') || '';
   box.replaceChildren();
+
+  const aiBox = el('div', 'ai-box', null, box);
+  drawAI_panel(aiBox, r, seq);
 
   el('h3', 'detail-h', 'Ringkasan', box);
   const dl = el('dl', 'detail-grid', null, box);
@@ -2541,6 +2762,80 @@ $('user-form').addEventListener('submit', async (ev) => {
 
 const roleName = (id) => (DATA.rbac.roles.find((r) => r.id === id) || {name: id}).name;
 
+// ---- Penggunaan AI (hanya administrator): token, panggilan, pengguna, dan model ----
+function drawAiUsage() {
+  const d = DATA.aiu;
+  if (!d) return;
+  const money = (v) => (v == null ? '—' : '$' + v.toFixed(v < 1 ? 4 : 2));
+  $('aiu-note').textContent = d.enabled
+    ? 'Dihitung dari token yang dilaporkan penyedia (' + d.provider + '). Hari dihitung dalam UTC, jadi pergantian hari terjadi pukul 07:00 WIB. Rincian per pengguna dan model hanya mencakup panggilan sejak pencatatan ini dipasang.'
+    : 'AI belum aktif: ' + d.reason + '.';
+  $('aiu-t-calls').textContent = fmtInt(d.today.calls);
+  $('aiu-t-limit').textContent = fmtInt(d.limit);
+  $('aiu-t-tokens').textContent = fmtInt(d.today.in_tokens + d.today.out_tokens);
+  $('aiu-t-in').textContent = fmtInt(d.today.in_tokens);
+  $('aiu-t-out').textContent = fmtInt(d.today.out_tokens);
+  $('aiu-t-14').textContent = fmtInt(d.total_14d.in_tokens + d.total_14d.out_tokens);
+  $('aiu-t-14calls').textContent = fmtInt(d.total_14d.calls);
+  $('aiu-t-cost').textContent = money(d.total_14d.cost);
+  $('aiu-t-cost-sub').textContent = d.price ? 'harga $' + d.price.in + ' / $' + d.price.out + ' per 1 juta token' : 'atur AI_PRICE_IN dan AI_PRICE_OUT untuk perkiraan';
+  $('aiu-t-model').textContent = d.model;
+  $('aiu-t-provider').textContent = d.provider;
+
+  const td_ = $('tb-aiu-days');
+  td_.replaceChildren();
+  const max = Math.max(1, ...d.days.map((x) => x.in_tokens + x.out_tokens));
+  d.days.forEach((x) => {
+    const tr = el('tr', null, null, td_);
+    td(tr, x.day, 'soc-mono');
+    td(tr, fmtInt(x.calls), 'soc-num');
+    td(tr, fmtInt(x.in_tokens), 'soc-num');
+    td(tr, fmtInt(x.out_tokens), 'soc-num');
+    td(tr, fmtInt(x.in_tokens + x.out_tokens), 'soc-num');
+    const bar = el('div', 'aiu-bar', null, td(tr, null, 'soc-opt'));
+    bar.style.width = Math.max(1, Math.round(((x.in_tokens + x.out_tokens) / max) * 100)) + '%';
+  });
+  if (!d.days.length) emptyRow(td_, 6, 'Belum ada pemakaian AI.');
+
+  const grp = (id, rows, empty) => {
+    const tb = $(id);
+    tb.replaceChildren();
+    rows.forEach((x) => {
+      const tr = el('tr', null, null, tb);
+      td(tr, x.name, 'soc-mono');
+      td(tr, fmtInt(x.calls), 'soc-num');
+      td(tr, fmtInt(x.in_tokens || 0), 'soc-num');
+      td(tr, fmtInt(x.out_tokens || 0), 'soc-num');
+      td(tr, fmtInt(x.errors || 0), 'soc-num soc-opt');
+      td(tr, money(x.cost), 'soc-num soc-opt');
+    });
+    if (!rows.length) emptyRow(tb, 6, empty);
+  };
+  grp('tb-aiu-users', d.by_user, 'Belum ada panggilan tercatat.');
+  grp('tb-aiu-models', d.by_model, 'Belum ada panggilan tercatat.');
+
+  const tr_ = $('tb-aiu-recent');
+  tr_.replaceChildren();
+  d.recent.forEach((x) => {
+    const tr = el('tr', null, null, tr_);
+    td(tr, fmtTime(x.at), 'soc-num');
+    td(tr, x.user, 'soc-mono');
+    td(tr, x.model, 'soc-opt soc-mono');
+    td(tr, x.alert_id.slice(0, 12) + '…', 'soc-opt soc-mono');
+    td(tr, fmtInt(x.in_tokens) + ' / ' + fmtInt(x.out_tokens), 'soc-num');
+    chip(tr, x.status === 'ok' ? 'Berhasil' : x.status === 'refused' ? 'Ditolak' : 'Gagal', 'tone-' + (x.status === 'ok' ? 'ok' : x.status === 'refused' ? 'warn' : 'bad'));
+    td(tr, x.seconds ? x.seconds.toFixed(1) + ' dtk' : '—', 'soc-num soc-opt');
+  });
+  if (!d.recent.length) emptyRow(tr_, 7, 'Belum ada panggilan tercatat.');
+}
+
+async function refreshAiUsage() {
+  if (!canManageUsers()) return;
+  try { DATA.aiu = await getJson('api/ai/usage'); } catch (e) { $('aiu-note').textContent = 'Tidak bisa memuat penggunaan AI: ' + (e.message || e); return; }
+  drawAiUsage();
+}
+$('aiu-refresh').addEventListener('click', refreshAiUsage);
+
 function drawAdmin() {
   const ad = DATA.admin;
   $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca. Masuk lewat akun pribadi; izin tiap akun ditentukan oleh perannya (RBAC). Administrator bisa menambah, menghapus, dan menonaktifkan akun di sini.' : 'Tidak ada data untuk ditampilkan.';
@@ -2575,6 +2870,99 @@ function drawAdmin() {
   });
   if (!DATA.integrations.length) emptyRow(ti, 3);
 }
+
+// ---- Playbook blokir IP (api/playbook): usulan, persetujuan, dan pencabutan ----
+const PB_STATUS = {'dry-run': ['Simulasi', 'tone-muted'], proposed: ['Menunggu persetujuan', 'tone-warn'], approved: ['Disetujui', 'tone-info'], executing: ['Memproses', 'tone-info'],
+  banned: ['Diblokir', 'tone-bad'], failed: ['Gagal', 'tone-bad'], rejected: ['Ditolak', 'tone-muted'], expired: ['Kedaluwarsa', 'tone-muted'], unbanned: ['Dicabut', 'tone-ok']};
+const PB_MODE = {off: 'Mati', 'dry-run': 'Simulasi', approval: 'Persetujuan manual', auto: 'Otomatis penuh'};
+const PB_LEVEL = {8: 'High (level 8+)', 10: 'level 10+', 12: 'Critical (level 12+)'};
+
+function drawPlaybook() {
+  const d = DATA.pb;
+  if (!d) { $('pb-rule').textContent = 'Status playbook tidak bisa dimuat dari server.'; return; }
+  const c = d.config;
+  $('pb-rule').textContent = 'Aturan: IP publik yang bukan di daftar putih dan memicu minimal ' + c.min_alerts + ' alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' dalam ' + c.window_min + ' menit di agen ' + (c.agents.length ? c.agents.join(', ') : 'mana pun')
+    + (c.min_abuse_score ? ' dan berskor AbuseIPDB minimal ' + c.min_abuse_score : '') + ' dicatat sesuai mode. Pemblokiran dijalankan di jail fail2ban "' + d.jail + '" (UFW, semua port).';
+  $('pb-t-mode').textContent = PB_MODE[c.mode] || c.mode;
+  $('pb-t-mode-sub').textContent = c.mode === 'auto' ? 'memblokir tanpa klik' : c.mode === 'approval' ? 'butuh klik Setujui' : c.mode === 'dry-run' ? 'tidak memblokir apa pun' : 'tidak mengevaluasi';
+  $('pb-t-prop').textContent = fmtInt(d.counts_24h.proposed || 0);
+  $('pb-t-ban').textContent = fmtInt(d.banned_active);
+  $('pb-t-dry').textContent = fmtInt(d.counts_24h['dry-run'] || 0);
+  $('pb-t-helper').textContent = d.helper_alive ? 'Aktif' : 'Mati';
+  $('pb-t-helper-sub').textContent = d.helper_alive ? 'soc-ban-helper berjalan' : 'ban tidak bisa dijalankan';
+  $('pb-safety').textContent = 'Pengaman (dipaksakan oleh pembantu root, bukan dashboard): hanya IP publik; daftar putih ' + (d.policy.readable ? d.policy.allowlist.join(', ') || '(kosong)' : '(kebijakan tidak terbaca)')
+    + ' dan alamat server ini tidak pernah diblokir; maksimal ' + d.policy.max_bans_per_hour + ' ban per jam dan ' + d.policy.max_active_bans + ' ban aktif; ban sementara ' + d.ban_hours + ' jam, lalu kedaluwarsa otomatis. Ban aktif juga tampil di halaman Fail2ban.';
+
+  const canCfg = hasPerm('integrations');
+  $('pb-form').hidden = !canCfg;
+  if (canCfg && !$('pb-form').dataset.filled) {
+    $('pb-form').dataset.filled = '1';
+    $('pb-mode').value = c.mode; $('pb-level').value = String(c.min_level);
+    $('pb-alerts').value = c.min_alerts; $('pb-window').value = c.window_min; $('pb-agents').value = c.agents.join(', ');
+    $('pb-abuse').value = c.min_abuse_score; $('pb-max').value = c.max_per_hour;
+  }
+
+  const tb = $('tb-pb');
+  tb.replaceChildren();
+  const canDecide = hasPerm('approve');
+  d.actions.forEach((x) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, fmtTime(x.at), 'soc-num');
+    td(tr, x.ip, 'soc-mono');
+    const st = PB_STATUS[x.status] || [x.status, 'tone-muted'];
+    const sc = chip(tr, st[0], st[1]);
+    if (x.result) sc.title = x.result;
+    const why = td(tr, x.reason);
+    if (x.decided_by) el('div', 'soc-card-note', 'oleh ' + x.decided_by, why);
+    td(tr, x.abuse == null ? '—' : x.abuse + '/100', 'soc-num soc-opt' + (x.abuse >= 50 ? ' soc-bad' : ''));
+    const ct = td(tr, null, 'soc-opt');
+    if (x.cats && x.cats.length) x.cats.forEach((k) => { const c = el('span', 'soc-chip tone-muted', k.name, ct); c.title = k.count + ' laporan'; c.style.marginRight = '.25rem'; });
+    else ct.textContent = '—';
+    td(tr, x.status === 'banned' && x.expires_at ? fmtTime(x.expires_at) : '—', 'soc-num soc-opt');
+    const act = td(tr, null);
+    if (canDecide && x.status === 'proposed') {
+      const ok = el('button', 'soc-btn primary', 'Setujui & blokir', act); ok.type = 'button';
+      ok.addEventListener('click', () => { if (confirm('Blokir ' + x.ip + ' selama ' + d.ban_hours + ' jam di server ini?')) pbAct(ok, x.id, 'approve'); });
+      const no = el('button', 'soc-btn', 'Tolak', act); no.type = 'button';
+      no.addEventListener('click', () => pbAct(no, x.id, 'reject'));
+    }
+    if (canDecide && x.status === 'banned') {
+      const un = el('button', 'soc-btn', 'Cabut ban', act); un.type = 'button';
+      un.addEventListener('click', () => { if (confirm('Cabut blokir untuk ' + x.ip + '?')) pbAct(un, x.id, 'unban'); });
+    }
+  });
+  if (!d.actions.length) emptyRow(tb, 8, c.mode === 'off' ? 'Playbook mati.' : 'Belum ada IP yang memenuhi syarat. Evaluasi berjalan tiap menit.');
+}
+
+async function pbAct(btn, id, verb) {
+  const m = $('pb-actmsg');
+  btn.disabled = true;
+  m.textContent = 'Memproses…';
+  try {
+    await postJson('api/playbook/actions/' + encodeURIComponent(id) + '/' + verb, {});
+    m.textContent = verb === 'approve' ? 'Disetujui; hasil eksekusi ada di tabel.' : verb === 'unban' ? 'Ban dicabut.' : 'Usulan ditolak.';
+  } catch (e) { m.textContent = e.message; }
+  refreshPlaybook();
+}
+
+async function refreshPlaybook() {
+  try { DATA.pb = await getJson('api/playbook'); } catch (e) { DATA.pb = null; }
+  drawPlaybook();
+}
+setInterval(() => { if (!$('view-automation').hidden) refreshPlaybook(); }, 15000);
+
+$('pb-save').addEventListener('click', async () => {
+  const mode = $('pb-mode').value;
+  if (mode === 'auto' && !confirm('Mode OTOMATIS memblokir IP tanpa persetujuan siapa pun. Pastikan daftar putih sudah benar dan simulasi sudah terbukti tepat. Lanjutkan?')) return;
+  const m = $('pb-msg');
+  m.textContent = 'Menyimpan…';
+  try {
+    DATA.pb = await postJson('api/playbook/config', {mode, confirm_auto: mode === 'auto', min_level: $('pb-level').value, min_alerts: $('pb-alerts').value, window_min: $('pb-window').value,
+      agents: $('pb-agents').value.split(',').map((x) => x.trim()).filter(Boolean), min_abuse_score: $('pb-abuse').value || 0, max_per_hour: $('pb-max').value});
+    m.textContent = 'Tersimpan.';
+    drawPlaybook();
+  } catch (e) { m.textContent = e.message; }
+});
 
 // ---- Fail2ban (snapshot dari pembantu root; hanya baca) ----
 function banExpiry(since, bantime) {
@@ -2697,6 +3085,8 @@ function showView(want) {
   const h = typeof want === 'string' ? want : location.hash.slice(1);
   const v = VIEWS.includes(h) && (h !== 'admin' || canManageUsers()) ? h : 'overview';
   if (v === 'fail2ban') refreshF2b();
+  if (v === 'admin') refreshAiUsage();
+  if (v === 'automation') refreshPlaybook();
   VIEWS.forEach((k) => { $('view-' + k).hidden = k !== v; });
   document.querySelectorAll('.side-link').forEach((a) => {
     if (a.dataset.view === v) a.setAttribute('aria-current', 'page');

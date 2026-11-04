@@ -1,0 +1,11 @@
+{
+  "_catatan": "Pasang sebagai /etc/soc-automation/ban-policy.json (root:root 644). Hanya root yang bisa mengubahnya; dashboard tidak.",
+  "jail": "beruk-playbook",
+  "allowlist": [
+    "125.165.60.10",
+    "43.173.12.72",
+    "43.133.142.174"
+  ],
+  "max_bans_per_hour": 20,
+  "max_active_bans": 200
+}

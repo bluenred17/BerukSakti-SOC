@@ -42,13 +42,13 @@ Setiap orang punya akun sendiri; izin ditentukan oleh peran dan ditegakkan di se
 | Lihat dashboard | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Triage alert | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | Kelola insiden & kasus | ✓ | ✓ | ✓ | ✓ | — | — |
-| Jalankan playbook* | ✓ | ✓ | ✓ | ✓ | — | — |
-| Setujui aksi otomatis* | ✓ | ✓ | ✓ | — | — | — |
+| Jalankan playbook | ✓ | ✓ | ✓ | ✓ | — | — |
+| Setujui aksi otomatis (ban playbook) | ✓ | ✓ | ✓ | — | — | — |
 | Kelola integrasi* | ✓ | — | — | — | — | — |
 | Kelola pengguna & peran | ✓ | — | — | — | — | — |
 | Lihat audit log | ✓ | ✓ | — | — | — | ✓ |
 
-\* Izin sudah ada, fiturnya belum.
+\* Izin sudah ada, fiturnya belum. Pengaturan playbook (mode, syarat) memakai izin "Kelola integrasi", jadi hanya administrator.
 
 Administrator menambah, menghapus, dan menonaktifkan/mengaktifkan akun di halaman Administration.
 
@@ -84,6 +84,48 @@ Layanan: `soc-automation-dashboard` (systemd) di `/opt/soc-automation-dashboard/
 3. Cek: `healthz` 200, `api/overview` tanpa login 401, `/` menampilkan form login. Bila gagal, kembalikan cadangan.
 
 Restart mengeluarkan semua pengguna (sesi disimpan di memori). Uji perubahan backend dulu di instance terpisah (port lain, sandbox systemd yang sama), bukan di layanan produksi.
+
+## Analisis AI per alert
+
+Klik sebuah alert di Alert Management, lalu **Analisis dengan AI** di kartu detail. Hasilnya penilaian (jinak, mencurigakan, berbahaya, atau perlu data lagi), bukti, langkah yang disarankan, dan kemungkinan false positive, dalam bahasa Indonesia. Hanya saran: dashboard tidak menjalankan tindakan apa pun dari hasil itu, dan model tidak diberi alat apa pun.
+
+- **Penyedia:** API kompatibel OpenAI (`POST {AI_BASE_URL}/chat/completions`), default `https://ai.sumopod.com/v1`. Tanpa SDK dan tanpa paket tambahan di server.
+- **Konfigurasi** (di `/etc/soc-automation/dashboard.env`): `AI_API_KEY` (wajib), `AI_MODEL` (default `claude-sonnet-4-6`), `AI_BASE_URL`, `AI_DAILY_LIMIT` (default 150 analisis per hari), `AI_MAX_TOKENS`. Pasang key lewat `read -rs` supaya tidak masuk riwayat shell atau chat.
+- **Data yang dikirim ke penyedia:** rule, MITRE, nama dan ID agen, log mentah (dipotong 3.000 karakter), field data, hingga 15 alert terkait, skor AbuseIPDB dari cache, status daftar IOC, dan status fail2ban untuk IP sumber. Kredensial, sesi, dan konfigurasi server tidak ikut.
+- **Keamanan:** isi log bisa dikendalikan penyerang, jadi dikirim sebagai data di dalam `<alert_data>` dengan tanda `<` di-escape dan instruksi eksplisit untuk mengabaikan perintah di dalamnya. Keluaran divalidasi dan ditampilkan sebagai teks.
+- **Biaya:** hasil disimpan sehingga membuka ulang alert tidak memanggil model lagi; analisis ulang punya jeda 30 detik; ada batas harian. Yang boleh memicu analisis hanya peran dengan izin triage.
+
+## Playbook: blokir IP sumber (Automation Center)
+
+Playbook memblokir IP sumber serangan lewat fail2ban dan UFW di server ini. Mode, dari paling aman:
+
+| Mode | Perilaku |
+|---|---|
+| Mati | Tidak mengevaluasi apa pun |
+| Simulasi (bawaan) | Mencatat IP yang akan diblokir; tidak memblokir |
+| Persetujuan manual | Membuat usulan; analis dengan izin approve (T3 ke atas) mengklik Setujui |
+| Otomatis penuh | Memblokir langsung; hanya administrator yang bisa menyalakannya, dengan konfirmasi |
+
+Syarat bisa diatur administrator: severity minimum, minimal N alert dalam W menit dari IP yang sama, agen yang dipantau, skor AbuseIPDB minimum (opsional), dan maksimal usulan per jam. Evaluasi berjalan tiap menit. Ban sementara (24 jam, diatur di jail), bisa dicabut dari tabel, dan semua tindakan tercatat di audit log. Ban aktif juga tampil di halaman Fail2ban.
+
+**Pengaman dipaksakan oleh pembantu root, bukan dashboard.** Dashboard (`socauto`, tanpa hak root) hanya menaruh berkas permintaan kecil; `soc-ban-helper` (root) memeriksa ulang: hanya IP publik, daftar putih (`/etc/soc-automation/ban-policy.json`, hanya root yang bisa mengubah) dan alamat server ini tidak pernah diblokir, batas ban per jam dan total ban aktif, hanya satu jail (`beruk-playbook`), dan hanya aksi ban atau unban. Berkas permintaan dibaca tanpa mengikuti symlink dan harus dimiliki `socauto`. Jadi dashboard yang dibobol pun tidak bisa memblokir IP yang dilindungi.
+
+Cakupan: hanya server tempat dashboard berjalan. Server lain (misalnya webserver) butuh Wazuh active response di agennya, yang mengubah konfigurasi Wazuh dan belum dibuat.
+
+Pemasangan (sekali, di server, dari folder `server/playbook/`):
+
+```bash
+sudo install -o root -g root -m 644 beruk-playbook.conf /etc/fail2ban/filter.d/beruk-playbook.conf
+sudo install -o root -g root -m 644 beruk-playbook.local /etc/fail2ban/jail.d/beruk-playbook.local
+sudo fail2ban-client -t && sudo fail2ban-client reload
+sudo install -o root -g root -m 750 soc-ban-helper /usr/local/sbin/soc-ban-helper
+sudo install -o root -g root -m 644 ban-policy.json.example /etc/soc-automation/ban-policy.json   # lalu edit daftar putihnya
+sudo install -d -o socauto -g socauto -m 770 /var/lib/soc-automation-dashboard/ban-requests
+sudo install -d -o root -g socauto -m 750 /var/lib/soc-automation-dashboard/ban-results
+sudo install -m 644 soc-ban-helper.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now soc-ban-helper
+```
+
+Isi `ban-policy.json` dengan IP Anda sendiri dan infrastruktur Anda sebelum mode selain Simulasi dinyalakan.
 
 ## Pembantu fail2ban
 
