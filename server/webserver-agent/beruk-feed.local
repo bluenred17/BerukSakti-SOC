@@ -1,0 +1,12 @@
+# Jail khusus agen penarik Beruk Sakti: tidak membaca log apa pun; ban dan unban hanya dari soc-ban-agent.
+# Pasang di /etc/fail2ban/jail.d/beruk-feed.local (install.sh mengisi banaction sesuai firewall server ini)
+[beruk-feed]
+enabled   = true
+backend   = polling
+logpath   = /dev/null
+filter    = beruk-feed
+maxretry  = 1
+findtime  = 1m
+# Pengaman bila agen berhenti: ban kedaluwarsa sendiri setelah 25 jam. Selama agen jalan, daftar dari dashboard yang berlaku.
+bantime   = 90000
+banaction = BANACTION_DIISI_INSTALLER

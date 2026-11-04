@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Agen penarik ban IP Beruk Sakti untuk server lain (mis. webserver).
+
+Agen ini berjalan sebagai root di server tujuan. Ia MENARIK daftar ban aktif dari dashboard lewat HTTPS (token Bearer), lalu
+menerapkannya ke SATU jail fail2ban khusus di server ini. Dashboard tidak pernah masuk ke server ini dan tidak bisa menjalankan
+perintah apa pun di sini; yang ia kirim hanya daftar alamat IP.
+
+Aturan yang dipaksakan DI SINI, apa pun isi daftarnya (sama seperti pembantu root di server dashboard):
+- hanya alamat IP publik (is_global); IP privat, loopback, multicast, dan sejenisnya diabaikan;
+- daftar putih lokal (config) dan semua alamat server ini sendiri tidak pernah diblokir;
+- batas ban baru per siklus dan batas total ban aktif;
+- hanya satu jail, hanya aksi ban/unban IP;
+- bila dashboard tidak terjangkau atau jawabannya tidak valid, TIDAK ada perubahan (ban yang ada tetap, tidak ada unban massal).
+"""
+import argparse
+import ipaddress
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from urllib.parse import urlencode
+
+CONFIG = "/etc/soc-ban-agent/config.json"
+VERSION = "1.0"
+MAX_FEED_BYTES = 1024 * 1024
+DEFAULT = {
+    "url": "",
+    "token_file": "/etc/soc-ban-agent/token",
+    "jail": "beruk-feed",
+    "host": "",
+    "allowlist": [],
+    "max_active": 200,
+    "max_bans_per_cycle": 25,
+    "interval": 15,
+    "fail2ban_client": "/usr/bin/fail2ban-client",
+    "timeout": 10,
+}
+
+
+def log(**kw):
+    kw["at"] = round(time.time(), 1)
+    print(json.dumps(kw, ensure_ascii=False), flush=True)
+
+
+def load_config(path):
+    cfg = dict(DEFAULT)
+    with open(path, encoding="utf-8") as f:
+        cfg.update(json.load(f))
+    if not cfg["host"]:
+        cfg["host"] = os.uname().nodename
+    if not cfg["url"].startswith("https://") and not os.environ.get("SOC_BAN_AGENT_ALLOW_HTTP"):
+        raise SystemExit("url harus https://")
+    if not re.match(r"^[A-Za-z0-9_.-]{1,64}$", cfg["jail"]):
+        raise SystemExit("nama jail tidak valid")
+    return cfg
+
+
+def read_token(path):
+    st = os.stat(path)
+    if st.st_uid != 0 or st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise SystemExit("berkas token harus milik root dengan mode 600: " + path)
+    with open(path, encoding="utf-8") as f:
+        t = f.read().strip()
+    if len(t) < 32:
+        raise SystemExit("token terlalu pendek")
+    return t
+
+
+def local_addresses():
+    out = []
+    try:
+        text = subprocess.run(["ip", "-o", "addr"], capture_output=True, text=True, timeout=5).stdout
+        for m in re.finditer(r"inet6?\s+([0-9a-fA-F:.]+)/", text):
+            out.append(m.group(1))
+    except Exception:
+        pass
+    return out
+
+
+def protected_networks(cfg):
+    nets = []
+    for e in list(cfg["allowlist"]) + local_addresses():
+        try:
+            nets.append(ipaddress.ip_network(str(e).strip(), strict=False))
+        except ValueError:
+            continue
+    return nets
+
+
+def fetch_feed(cfg, token, applied, failed):
+    q = urlencode({"host": cfg["host"], "applied": applied, "failed": failed, "v": VERSION})
+    req = urllib.request.Request(cfg["url"] + ("&" if "?" in cfg["url"] else "?") + q,
+                                 headers={"Authorization": "Bearer " + token, "Accept": "application/json", "User-Agent": "soc-ban-agent/" + VERSION})
+    with urllib.request.urlopen(req, timeout=cfg["timeout"]) as r:
+        raw = r.read(MAX_FEED_BYTES + 1)
+    if len(raw) > MAX_FEED_BYTES:
+        raise ValueError("jawaban terlalu besar")
+    data = json.loads(raw.decode("utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("bans"), list):
+        raise ValueError("format jawaban tidak dikenal")
+    return data["bans"]
+
+
+def desired_ips(bans, cfg, allow_nonglobal=False):
+    """IP yang boleh diterapkan: valid, publik, bukan daftar putih; urutan dipertahankan, dibatasi max_active."""
+    nets = protected_networks(cfg)
+    out, seen, skipped = [], set(), 0
+    for b in bans:
+        ip = b.get("ip") if isinstance(b, dict) else None
+        try:
+            addr = ipaddress.ip_address(str(ip).strip())
+        except ValueError:
+            skipped += 1
+            continue
+        s = str(addr)
+        if (not addr.is_global and not allow_nonglobal) or any(addr in n for n in nets) or s in seen:
+            skipped += 1
+            continue
+        seen.add(s)
+        out.append(s)
+    return out[: cfg["max_active"]], skipped
+
+
+def f2b(cfg, *args):
+    p = subprocess.run([cfg["fail2ban_client"], *args], capture_output=True, text=True, timeout=20)
+    return p.returncode, (p.stdout + p.stderr).strip()
+
+
+def current_bans(cfg):
+    rc, out = f2b(cfg, "status", cfg["jail"])
+    if rc != 0:
+        raise RuntimeError("jail " + cfg["jail"] + " tidak ada atau fail2ban mati")
+    m = re.search(r"Banned IP list:\s*(.*)", out)
+    ips = set()
+    for tok in (m.group(1).split() if m else []):
+        try:
+            ips.add(str(ipaddress.ip_address(tok)))
+        except ValueError:
+            continue
+    return ips
+
+
+def sync(cfg, token, state, allow_nonglobal=False):
+    """Satu siklus. Yang dilaporkan ke dashboard: jumlah IP yang aktif di jail saat ini dan jumlah kegagalan siklus sebelumnya."""
+    try:
+        have = current_bans(cfg)
+    except Exception as exc:
+        log(event="jail_gagal", error=str(exc)[:160])
+        return False
+    try:
+        bans = fetch_feed(cfg, token, len(have), state.get("failed", 0))
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+        log(event="feed_gagal", error=type(exc).__name__ + ": " + str(exc)[:120])
+        return False
+    want, skipped = desired_ips(bans, cfg, allow_nonglobal)
+    wanted = set(want)
+    applied = failed = 0
+    for ip in [i for i in want if i not in have][: cfg["max_bans_per_cycle"]]:
+        rc, out = f2b(cfg, "set", cfg["jail"], "banip", ip)
+        if rc == 0:
+            applied += 1
+            log(event="ban", ip=ip)
+        else:
+            failed += 1
+            log(event="ban_gagal", ip=ip, error=out[:120])
+    for ip in sorted(have - wanted):
+        rc, out = f2b(cfg, "set", cfg["jail"], "unbanip", ip)
+        if rc == 0:
+            log(event="unban", ip=ip)
+        else:
+            failed += 1
+            log(event="unban_gagal", ip=ip, error=out[:120])
+    state["failed"] = failed
+    if applied or failed or skipped:
+        log(event="siklus", diterapkan=applied, gagal=failed, dilewati=skipped)
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default=CONFIG)
+    ap.add_argument("--daemon", action="store_true", help="berjalan terus; dipakai oleh systemd")
+    ap.add_argument("--once", action="store_true", help="satu siklus lalu keluar (untuk uji)")
+    ap.add_argument("--test-allow-nonglobal", action="store_true", help="HANYA untuk uji manual: izinkan IP non-publik; tidak pernah dipakai unit systemd")
+    args = ap.parse_args()
+    if args.test_allow_nonglobal and args.daemon:
+        sys.exit("--test-allow-nonglobal tidak boleh dipakai bersama --daemon")
+    cfg = load_config(args.config)
+    token = read_token(cfg["token_file"])
+    state = {}
+    if args.once:
+        sys.exit(0 if sync(cfg, token, state, args.test_allow_nonglobal) else 1)
+    log(event="mulai", host=cfg["host"], jail=cfg["jail"], url=cfg["url"], versi=VERSION)
+    while True:
+        try:
+            cfg = load_config(args.config)
+            token = read_token(cfg["token_file"])
+            sync(cfg, token, state)
+        except SystemExit as exc:
+            log(event="config_salah", error=str(exc)[:160])
+        except Exception as exc:
+            log(event="galat", error=type(exc).__name__ + ": " + str(exc)[:160])
+        time.sleep(max(5, int(cfg.get("interval", 15))))
+
+
+if __name__ == "__main__":
+    main()

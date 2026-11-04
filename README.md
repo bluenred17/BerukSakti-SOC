@@ -25,11 +25,11 @@ Sembilan modul di sidebar kiri, ditambah Asisten SOC di sisi kanan (aturan kata 
 | Alert Management | Alert terbaru dari Wazuh (hanya baca), filter, status triage |
 | AI Investigation | Skor risiko dan korelasi alert per alert (aturan, bukan LLM) |
 | Threat Intelligence | Lookup IOC terhadap daftar IOC bawaan Wazuh, IP sumber teratas |
-| Incident Management | Kasus lokal, timeline, audit log |
+| Incident Management | Kasus lokal dan timeline |
 | Automation Center | Status active response Wazuh |
 | SIEM Health | Cluster, layanan, agen, EPS, peringatan pipeline |
 | Fail2ban | Jail, IP yang sedang diblokir, riwayat ban/unban, skor AbuseIPDB (hanya baca) |
-| Administration | Koneksi, pengguna, matriks RBAC, integrasi (hanya administrator) |
+| Administration | Koneksi, pengguna, matriks RBAC, integrasi (administrator); audit log (administrator dan peran dengan izin audit) |
 
 Bagian yang tidak punya sumber di Wazuh (playbook, persetujuan aksi, MTTD/MTTR) tidak ditampilkan atau dikosongkan. Tidak ada data contoh. Semua waktu dalam WIB (UTC+7).
 
@@ -94,6 +94,35 @@ Klik sebuah alert di Alert Management, lalu **Analisis dengan AI** di kartu deta
 - **Data yang dikirim ke penyedia:** rule, MITRE, nama dan ID agen, log mentah (dipotong 3.000 karakter), field data, hingga 15 alert terkait, skor AbuseIPDB dari cache, status daftar IOC, dan status fail2ban untuk IP sumber. Kredensial, sesi, dan konfigurasi server tidak ikut.
 - **Keamanan:** isi log bisa dikendalikan penyerang, jadi dikirim sebagai data di dalam `<alert_data>` dengan tanda `<` di-escape dan instruksi eksplisit untuk mengabaikan perintah di dalamnya. Keluaran divalidasi dan ditampilkan sebagai teks.
 - **Biaya:** hasil disimpan sehingga membuka ulang alert tidak memanggil model lagi; analisis ulang punya jeda 30 detik; ada batas harian. Yang boleh memicu analisis hanya peran dengan izin triage.
+
+## Memblokir di server lain (webserver) dengan agen penarik
+
+Dashboard tidak pernah masuk ke server lain. Server tujuan (mis. `webserver-ubuntu-01`) menjalankan agen kecil `soc-ban-agent` (root)
+yang **menarik** daftar ban aktif dari dashboard lewat HTTPS tiap 15 detik dan menerapkannya ke satu jail fail2ban khusus, `beruk-feed`.
+Yang dikirim dashboard hanya daftar alamat IP; agen memeriksa ulang di sisinya (IP publik saja, daftar putih lokal dan alamat server itu
+sendiri tidak pernah diblokir, batas ban baru per siklus dan total). Bila dashboard tidak terjangkau atau jawabannya tidak valid, tidak ada
+perubahan (tidak ada unban massal). Ban yang dicabut atau kedaluwarsa di dashboard ikut dicabut di sana. Status tiap server tampil di
+Automation Center, kartu "Server lain yang menarik daftar ban".
+
+1. Di server dashboard, aktifkan feed dengan membuat token acak (hanya root dan `socauto` yang bisa membacanya):
+
+   ```bash
+   sudo bash -c 'umask 037; openssl rand -hex 32 > /etc/soc-automation/feed-token; chown root:socauto /etc/soc-automation/feed-token'
+   sudo cat /etc/soc-automation/feed-token   # salin, untuk langkah 3
+   ```
+
+2. Salin folder `server/webserver-agent` ke server tujuan, misalnya `scp -r server/webserver-agent user@webserver:/tmp/`.
+3. Di server tujuan (fail2ban harus sudah terpasang dan aktif), jalankan sebagai root. Token diminta secara tersembunyi:
+
+   ```bash
+   sudo bash /tmp/webserver-agent/install.sh --url https://wazuh.toyspedia.fun/soc-automation/api/ban-feed         --host webserver-ubuntu-01 --allow 43.133.142.174,43.173.12.72,125.165.60.10
+   ```
+
+   Pemasang memilih `banaction` sesuai firewall (UFW, nftables, atau iptables); bisa dipaksa dengan `--banaction`. Hapus semuanya dengan `--uninstall`.
+4. Ganti token kapan saja dengan menimpa `/etc/soc-automation/feed-token` di dashboard dan `/etc/soc-ban-agent/token` di server tujuan; feed dibaca ulang tiap permintaan.
+
+Keamanan: feed memakai token Bearer (bukan sesi login), dibatasi percobaan salah, dan hanya memuat ban yang sudah lolos pembantu root di server dashboard
+dan belum kedaluwarsa. Berkas token agen harus milik root dengan mode 600, dan agen menolak berjalan bila tidak begitu.
 
 ## Playbook: blokir IP sumber (Automation Center)
 

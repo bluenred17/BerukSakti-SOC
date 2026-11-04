@@ -1,0 +1,3 @@
+
+# Berkas server dipasang di Linux: selalu akhir baris LF
+server/** text eol=lf

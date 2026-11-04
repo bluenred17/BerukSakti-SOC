@@ -1,0 +1,10 @@
+{
+  "url": "https://wazuh.toyspedia.fun/soc-automation/api/ban-feed",
+  "token_file": "/etc/soc-ban-agent/token",
+  "jail": "beruk-feed",
+  "host": "webserver-ubuntu-01",
+  "allowlist": ["43.133.142.174", "43.173.12.72", "125.165.60.10", "103.111.214.131"],
+  "max_active": 200,
+  "max_bans_per_cycle": 25,
+  "interval": 15
+}

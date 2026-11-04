@@ -815,21 +815,6 @@ body::after {
       <ol class="timeline" id="tl-list"></ol>
     </section>
 
-    <section class="soc-card soc-wide" id="audit-card" hidden>
-      <h2>Audit log</h2>
-      <p class="soc-card-note">Login, logout, dan perubahan triage, kasus, atau pengguna beserta pelakunya; waktu dalam WIB (UTC+7).</p>
-      <div class="soc-tablewrap">
-        <table class="soc-table">
-          <thead><tr>
-            <th class="soc-num">Waktu</th>
-            <th>Pengguna</th>
-            <th>Aksi</th>
-            <th class="soc-opt">Target</th>
-          </tr></thead>
-          <tbody id="tb-audit"></tbody>
-        </table>
-      </div>
-    </section>
   </div>
 </section>
 
@@ -891,6 +876,7 @@ body::after {
               <option value="auto">Otomatis penuh</option>
             </select>
           </label>
+          <label class="soc-card-note">dari level <input id="pb-rep-level" class="soc-search" type="number" min="3" max="15" style="width:5rem;flex:none" aria-label="Level alert minimum untuk aturan reputasi"> (3 = semua alert di Alert Management)</label>
           <label class="soc-card-note">skor min <input id="pb-rep-score" class="soc-search" type="number" min="50" max="100" style="width:5rem;flex:none" aria-label="Skor AbuseIPDB untuk aturan reputasi"></label>
           <label class="soc-card-note">IP terlihat dalam <input id="pb-rep-win" class="soc-search" type="number" min="1" max="1440" style="width:5rem;flex:none" aria-label="Jendela menit aturan reputasi"> menit</label>
           <button type="button" class="soc-btn primary" id="pb-save">Simpan pengaturan</button>
@@ -914,6 +900,43 @@ body::after {
         </table>
       </div>
       <p class="soc-card-note" id="pb-actmsg" role="status"></p>
+    </section>
+
+    <section class="soc-card soc-wide" id="pbf-card">
+      <h2>Server lain yang menarik daftar ban</h2>
+      <p class="soc-card-note" id="pbf-note">Memuat…</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Server</th>
+            <th>Status</th>
+            <th class="soc-num">Terakhir menarik</th>
+            <th class="soc-num">IP aktif di sana</th>
+            <th class="soc-num soc-opt">Gagal</th>
+            <th class="soc-opt">Alamat asal</th>
+          </tr></thead>
+          <tbody id="tb-pbf"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide" id="pbw-card">
+      <h2>IP sumber saat ini (live)</h2>
+      <p class="soc-card-note" id="pbw-note">Memuat…</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>IP sumber</th>
+            <th class="soc-num">Alert</th>
+            <th class="soc-num soc-opt">Level maks</th>
+            <th class="soc-num soc-opt">AbuseIPDB</th>
+            <th>Keputusan playbook</th>
+            <th class="soc-opt">Rule</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="tb-pbw"></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="soc-card soc-wide">
@@ -1213,7 +1236,7 @@ body::after {
   </header>
 
   <div class="soc-grid">
-    <section class="soc-card soc-wide">
+    <section class="soc-card soc-wide" data-needs="users">
       <h2>Koneksi dan akses</h2>
       <p class="soc-card-note">Dari konfigurasi dashboard di VPS.</p>
       <div class="soc-tablewrap">
@@ -1223,7 +1246,7 @@ body::after {
       </div>
     </section>
 
-    <section class="soc-card soc-wide" id="aiu-card">
+    <section class="soc-card soc-wide" id="aiu-card" data-needs="users">
       <h2>Penggunaan AI</h2>
       <p class="soc-card-note" id="aiu-note">Memuat…</p>
       <div class="soc-tiles">
@@ -1337,7 +1360,7 @@ body::after {
       <div class="soc-tools"><button type="button" class="soc-btn" id="aiu-refresh">Muat ulang</button></div>
     </section>
 
-    <section class="soc-card soc-wide">
+    <section class="soc-card soc-wide" data-needs="users">
       <h2>Pengguna</h2>
       <p class="soc-card-note" id="users-note">Akun yang bisa masuk ke dashboard. Daftar ini hanya tampil untuk peran yang punya izin mengelola pengguna.</p>
       <form id="user-form" class="soc-tools" hidden>
@@ -1371,7 +1394,23 @@ body::after {
       </div>
     </section>
 
-    <section class="soc-card soc-wide">
+    <section class="soc-card soc-wide" id="audit-card" hidden>
+      <h2>Audit log</h2>
+      <p class="soc-card-note">Login, logout, dan perubahan triage, kasus, atau pengguna beserta pelakunya; waktu dalam WIB (UTC+7).</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>Pengguna</th>
+            <th>Aksi</th>
+            <th class="soc-opt">Target</th>
+          </tr></thead>
+          <tbody id="tb-audit"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide" data-needs="users">
       <h2>Role-based access control (RBAC)</h2>
       <p class="soc-card-note">Izin tiap peran, diterapkan oleh server pada setiap permintaan. Peran dipilih saat akun dibuat; untuk mengubahnya pakai <code>manage_users.py role</code> di VPS.</p>
       <div class="soc-tablewrap">
@@ -2826,6 +2865,8 @@ function drawSiem() {
 
 // ---- 8. Administration ----
 const canManageUsers = () => !!(LIVE.me && (LIVE.me.permissions || []).includes('users'));
+const canSeeAudit = () => !!(LIVE.me && (LIVE.me.permissions || []).includes('audit'));
+const canAdminPage = () => canManageUsers() || canSeeAudit();
 
 function drawUsers() {
   const manage = canManageUsers();
@@ -3013,10 +3054,23 @@ async function refreshAiUsage() {
 }
 $('aiu-refresh').addEventListener('click', refreshAiUsage);
 
+function gateAdmin() {
+  const full = canManageUsers();
+  document.querySelectorAll('#view-admin [data-needs="users"]').forEach((sec) => { sec.hidden = !full; });
+  if (!full) $('ad-lede').textContent = 'Audit log perubahan dan login di dashboard. Pengaturan pengguna dan RBAC hanya untuk administrator.';
+}
+
+async function refreshAudit() {
+  if (!canSeeAudit()) return;
+  const au = await getJson('api/audit').catch(() => null);
+  if (au) { DATA.audit = mapAudit(au.audit); drawAudit(); }
+}
+
 function drawAdmin() {
   const ad = DATA.admin;
   $('ad-lede').textContent = ad ? 'Dashboard membaca Wazuh dengan akses hanya baca. Masuk lewat akun pribadi; izin tiap akun ditentukan oleh perannya (RBAC). Administrator bisa menambah, menghapus, dan menonaktifkan akun di sini.' : 'Tidak ada data untuk ditampilkan.';
   drawUsers();
+  gateAdmin();
 
   const head = $('th-rbac');
   head.replaceChildren();
@@ -3060,9 +3114,42 @@ function drawPlaybook() {
   const c = d.config;
   $('pb-rule').textContent = 'Aturan: IP publik yang bukan di daftar putih dan memicu minimal ' + c.min_alerts + ' alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' dalam ' + c.window_min + ' menit di agen ' + (c.agents.length ? c.agents.join(', ') : 'mana pun')
     + (c.suricata ? ', atau minimal ' + c.suricata_min_alerts + ' alert Suricata yang masuk ke server' : '') + (c.min_abuse_score ? ' dan berskor AbuseIPDB minimal ' + c.min_abuse_score : '') + ' dicatat sesuai mode. Pemblokiran dijalankan di jail fail2ban "' + d.jail + '" (UFW, semua port).';
-  $('pb-rep-note').textContent = 'Aturan reputasi AbuseIPDB (' + (PB_MODE[c.rep_mode] || c.rep_mode) + '): IP publik yang muncul sebagai sumber alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' (Wazuh, atau Suricata yang masuk ke server) dalam ' + c.rep_window_min + ' menit terakhir dan berskor AbuseIPDB ' + c.rep_min_score + '/100 ke atas'
+  $('pb-rep-note').textContent = 'Aturan reputasi AbuseIPDB (' + (PB_MODE[c.rep_mode] || c.rep_mode) + '): IP publik yang muncul sebagai sumber alert level ' + c.rep_min_level + '+ di semua agen (yang sama dengan Alert Management; Wazuh, atau Suricata yang masuk ke server) dalam ' + c.rep_window_min + ' menit terakhir dan berskor AbuseIPDB ' + c.rep_min_score + '/100 ke atas'
     + (c.rep_mode === 'auto' ? ' diblokir otomatis tanpa persetujuan.' : c.rep_mode === 'approval' ? ' diusulkan untuk disetujui.' : c.rep_mode === 'dry-run' ? ' hanya dicatat sebagai simulasi.' : ' tidak dievaluasi.')
     + (d.abuse_enabled === false ? ' AbuseIPDB belum diaktifkan di server, jadi aturan ini tidak berjalan.' : '');
+  const fd = d.feed || {enabled: false, hosts: []};
+  $('pbf-note').textContent = fd.enabled
+    ? 'Server lain (mis. webserver) menarik daftar ban aktif dari dashboard tiap 15 detik lewat agen soc-ban-agent dan menerapkannya ke jail fail2ban miliknya. Dashboard tidak pernah masuk ke server itu; agen memeriksa ulang IP publik, daftar putih, dan batas di sisinya.'
+    : 'Feed ban belum diaktifkan di server dashboard (berkas token /etc/soc-automation/feed-token belum ada), jadi tidak ada server lain yang bisa menarik daftar ban.';
+  const fb = $('tb-pbf');
+  fb.replaceChildren();
+  fd.hosts.forEach((h) => {
+    const tr = el('tr', null, null, fb);
+    td(tr, h.host, 'soc-mono');
+    chip(tr, h.stale ? 'Tidak menarik' : 'Tersinkron', h.stale ? 'tone-bad' : 'tone-ok');
+    td(tr, h.age_seconds < 90 ? h.age_seconds + ' detik lalu' : Math.round(h.age_seconds / 60) + ' menit lalu', 'soc-num');
+    td(tr, fmtInt(h.applied), 'soc-num');
+    td(tr, fmtInt(h.failed), 'soc-num soc-opt' + (h.failed ? ' soc-bad' : ''));
+    td(tr, h.ip, 'soc-opt soc-mono');
+  });
+  if (!fd.hosts.length) emptyRow(fb, 6, fd.enabled ? 'Belum ada server yang menarik. Pasang agen di server tujuan (server/webserver-agent).' : 'Belum aktif.');
+  const wt = d.watch || {ips: [], window_min: c.window_min, at: ''};
+  $('pbw-note').textContent = 'IP yang muncul sebagai sumber alert level ' + (wt.min_level || c.min_level) + '+ dalam ' + wt.window_min + ' menit terakhir (sumber yang sama dengan Alert Management), diperbarui otomatis tiap 5 detik. Playbook mengevaluasi tiap ' + (d.eval_interval || 20) + ' detik; baris di sini menjelaskan keputusan untuk tiap IP, jadi IP yang belum masuk daftar aksi tetap terlihat beserta alasannya.'
+    + (wt.at ? ' Terakhir diambil ' + fmtTime(wt.at) + '.' : '');
+  const wb = $('tb-pbw');
+  wb.replaceChildren();
+  wt.ips.forEach((x) => {
+    const tr = el('tr', null, null, wb);
+    const ipc = td(tr, null, 'soc-mono'); repCell(ipc, x.ip);
+    td(tr, fmtInt(x.alerts), 'soc-num');
+    td(tr, String(x.max_level), 'soc-num soc-opt');
+    td(tr, x.abuse == null ? '—' : x.abuse + '/100', 'soc-num soc-opt' + (x.abuse >= 50 ? ' soc-bad' : ''));
+    chip(tr, x.decision, x.state === 'match' ? 'tone-warn' : x.state === 'banned' ? 'tone-bad' : x.state === 'handled' ? 'tone-info' : 'tone-muted');
+    td(tr, x.rules.join(', '), 'soc-opt');
+    const a = td(tr, null); const b = el('button', 'soc-btn', 'Cari', a); b.type = 'button';
+    b.addEventListener('click', () => { $('am-search').value = x.ip; try { history.replaceState(null, '', '#alerts'); } catch (e) {} showView('alerts'); $('am-search').dispatchEvent(new Event('input')); });
+  });
+  if (!wt.ips.length) emptyRow(wb, 7, c.mode === 'off' && c.rep_mode === 'off' ? 'Playbook mati.' : 'Tidak ada IP sumber alert pada jendela ini.');
   $('pb-t-mode').textContent = PB_MODE[c.mode] || c.mode;
   $('pb-t-mode-sub').textContent = c.mode === 'auto' ? 'memblokir tanpa klik' : c.mode === 'approval' ? 'butuh klik Setujui' : c.mode === 'dry-run' ? 'tidak memblokir apa pun' : 'tidak mengevaluasi';
   $('pb-t-prop').textContent = fmtInt(d.counts_24h.proposed || 0);
@@ -3081,7 +3168,7 @@ function drawPlaybook() {
     $('pb-alerts').value = c.min_alerts; $('pb-window').value = c.window_min; $('pb-agents').value = c.agents.join(', ');
     $('pb-abuse').value = c.min_abuse_score; $('pb-max').value = c.max_per_hour;
     $('pb-suri').checked = !!c.suricata; $('pb-suri-n').value = c.suricata_min_alerts;
-    $('pb-rep-mode').value = c.rep_mode; $('pb-rep-score').value = c.rep_min_score; $('pb-rep-win').value = c.rep_window_min;
+    $('pb-rep-mode').value = c.rep_mode; $('pb-rep-level').value = c.rep_min_level; $('pb-rep-score').value = c.rep_min_score; $('pb-rep-win').value = c.rep_window_min;
   }
 
   const tb = $('tb-pb');
@@ -3131,7 +3218,7 @@ async function refreshPlaybook() {
   try { DATA.pb = await getJson('api/playbook'); } catch (e) { DATA.pb = null; }
   drawPlaybook();
 }
-setInterval(() => { if (!$('view-automation').hidden) refreshPlaybook(); }, 15000);
+setInterval(() => { if (!$('view-automation').hidden) refreshPlaybook(); }, 5000);
 
 $('pb-save').addEventListener('click', async () => {
   const mode = $('pb-mode').value, repMode = $('pb-rep-mode').value;
@@ -3140,7 +3227,7 @@ $('pb-save').addEventListener('click', async () => {
   const m = $('pb-msg');
   m.textContent = 'Menyimpan…';
   try {
-    DATA.pb = await postJson('api/playbook/config', {mode, confirm_auto: mode === 'auto' || repMode === 'auto', rep_mode: repMode, rep_min_score: $('pb-rep-score').value, rep_window_min: $('pb-rep-win').value, min_level: $('pb-level').value, min_alerts: $('pb-alerts').value, window_min: $('pb-window').value,
+    DATA.pb = await postJson('api/playbook/config', {mode, confirm_auto: mode === 'auto' || repMode === 'auto', rep_mode: repMode, rep_min_level: $('pb-rep-level').value, rep_min_score: $('pb-rep-score').value, rep_window_min: $('pb-rep-win').value, min_level: $('pb-level').value, min_alerts: $('pb-alerts').value, window_min: $('pb-window').value,
       agents: $('pb-agents').value.split(',').map((x) => x.trim()).filter(Boolean), min_abuse_score: $('pb-abuse').value || 0, max_per_hour: $('pb-max').value, suricata: $('pb-suri').checked, suricata_min_alerts: $('pb-suri-n').value});
     m.textContent = 'Tersimpan.';
     drawPlaybook();
@@ -3392,10 +3479,10 @@ window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer
 
 function showView(want) {
   const h = typeof want === 'string' ? want : location.hash.slice(1);
-  const v = VIEWS.includes(h) && (h !== 'admin' || canManageUsers()) ? h : 'overview';
+  const v = VIEWS.includes(h) && (h !== 'admin' || canAdminPage()) ? h : 'overview';
   if (v === 'fail2ban') refreshF2b();
   if (v === 'suricata') refreshSuri();
-  if (v === 'admin') refreshAiUsage();
+  if (v === 'admin') { refreshAiUsage(); refreshAudit(); gateAdmin(); }
   if (v === 'automation') refreshPlaybook();
   VIEWS.forEach((k) => { $('view-' + k).hidden = k !== v; });
   document.querySelectorAll('.side-link').forEach((a) => {
@@ -3768,7 +3855,7 @@ function viewNote(view, kind, html) {
 }
 
 $('view-admin').hidden = true;
-document.querySelector('.side-link[data-view="admin"]').style.display = canManageUsers() ? '' : 'none';
+document.querySelector('.side-link[data-view="admin"]').style.display = canAdminPage() ? '' : 'none';
 if (LIVE.me) {
   $('su-name').textContent = LIVE.me.user;
   $('su-role').textContent = LIVE.me.role_name || LIVE.me.role;

@@ -1,0 +1,19 @@
+[Unit]
+Description=Agen penarik ban IP Beruk Sakti (menerapkan daftar dari dashboard ke jail beruk-feed)
+After=network-online.target fail2ban.service
+Wants=network-online.target fail2ban.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/soc-ban-agent --daemon
+User=root
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+MemoryMax=96M

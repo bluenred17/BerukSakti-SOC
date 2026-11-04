@@ -586,6 +586,7 @@ def init_db():
         if "cats" not in [r[1] for r in con.execute("PRAGMA table_info(playbook_actions)")]:
             con.execute("ALTER TABLE playbook_actions ADD COLUMN cats TEXT NOT NULL DEFAULT '[]'")
         con.execute("CREATE INDEX IF NOT EXISTS audit_login ON audit(action,target,id)")
+        con.execute("CREATE TABLE IF NOT EXISTS feed_hosts(host TEXT PRIMARY KEY,at REAL NOT NULL,ip TEXT NOT NULL DEFAULT '',applied INTEGER NOT NULL DEFAULT 0,failed INTEGER NOT NULL DEFAULT 0)")
 
 def last_logins():
     """Login terakhir per pengguna, dibaca dari audit log (baris 'login' berisi IP); berlaku juga untuk login sebelum fitur ini ada."""
@@ -924,9 +925,9 @@ PB_REQ=os.environ.get("PLAYBOOK_REQ_DIR","/var/lib/soc-automation-dashboard/ban-
 PB_RES=os.environ.get("PLAYBOOK_RES_DIR","/var/lib/soc-automation-dashboard/ban-results")
 PB_BEAT=os.environ.get("PLAYBOOK_HEARTBEAT","/var/lib/soc-automation-dashboard/ban-helper.heartbeat")
 PB_JAIL="beruk-playbook"
-PB_EVAL_INTERVAL=int(os.environ.get("PLAYBOOK_EVAL_INTERVAL","60"))
+PB_EVAL_INTERVAL=int(os.environ.get("PLAYBOOK_EVAL_INTERVAL","20"))
 PB_MODES=("off","dry-run","approval","auto")
-PB_DEFAULTS={"mode":"dry-run","min_level":8,"min_alerts":5,"window_min":10,"agents":["VM-11-51-ubuntu"],"min_abuse_score":0,"max_per_hour":10,"suricata":True,"suricata_min_alerts":3,"rep_mode":"dry-run","rep_min_score":100,"rep_window_min":60}
+PB_DEFAULTS={"mode":"dry-run","min_level":8,"min_alerts":5,"window_min":10,"agents":["VM-11-51-ubuntu"],"min_abuse_score":0,"max_per_hour":10,"suricata":True,"suricata_min_alerts":3,"rep_mode":"dry-run","rep_min_score":100,"rep_window_min":60,"rep_min_level":3}
 PB_BLOCKING=("proposed","approved","executing","banned","rejected","unbanned")
 
 def pb_config():
@@ -944,7 +945,7 @@ def pb_validate(body):
     if "mode" in body:
         if body["mode"] not in PB_MODES:raise ValueError("Mode tidak dikenal")
         out["mode"]=body["mode"]
-    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(1,100),"suricata_min_alerts":(1,1000),"rep_min_score":(50,100),"rep_window_min":(1,1440)}.items():
+    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(1,100),"suricata_min_alerts":(1,1000),"rep_min_score":(50,100),"rep_window_min":(1,1440),"rep_min_level":(3,15)}.items():
         if k in body:
             try:v=int(body[k])
             except (TypeError,ValueError):raise ValueError(k+" harus berupa angka")
@@ -1037,10 +1038,10 @@ def pb_evaluate_rep(cfg):
     if not ABUSE_KEY:return 0
     mode=cfg["rep_mode"];status={"dry-run":"dry-run","approval":"proposed","auto":"approved"}[mode]
     pol=pb_policy();banned,_,_=pb_banned();now=time.time()
-    wide=dict(cfg,min_alerts=1,suricata_min_alerts=1,window_min=cfg["rep_window_min"])
+    wide=dict(cfg,min_alerts=1,suricata_min_alerts=1,window_min=cfg["rep_window_min"],min_level=cfg["rep_min_level"],agents=[])
     cands=[]
     with db() as con:
-        made=con.execute("SELECT count(*) FROM playbook_actions WHERE at>?",(now-3600,)).fetchone()[0]
+        made=con.execute("SELECT count(*) FROM playbook_actions WHERE at>? AND (status='dry-run')=?",(now-3600,int(status=="dry-run"))).fetchone()[0]
         for b in pb_candidates(wide):
             ip=str(b["key"])
             if pb_protected(ip,pol) or ip in banned:continue
@@ -1056,7 +1057,7 @@ def pb_evaluate_rep(cfg):
         rules=[str(r["key"]) for r in b.get("rules",{}).get("buckets",[])]
         agent=(b.get("agent",{}).get("buckets") or [{"key":""}])[0]["key"]
         cats=ab.get("categories") or []
-        reason="Reputasi AbuseIPDB %d/100 (%d laporan dari %d pelapor)%s; %d alert level >=%d dalam %d menit (rule %s)"%(ab["score"],ab.get("reports",0),ab.get("users",0),", "+", ".join(c["name"] for c in cats[:3]) if cats else "",b["doc_count"],cfg["min_level"],cfg["rep_window_min"],", ".join(rules))
+        reason="Reputasi AbuseIPDB %d/100 (%d laporan dari %d pelapor)%s; %d alert level >=%d dalam %d menit (rule %s)"%(ab["score"],ab.get("reports",0),ab.get("users",0),", "+", ".join(c["name"] for c in cats[:3]) if cats else "",b["doc_count"],cfg["rep_min_level"],cfg["rep_window_min"],", ".join(rules))
         rows.append((secrets.token_hex(8),now,ip,status,reason,int(b["doc_count"]),int(b["lvl"]["value"] or 0),json.dumps(rules),str(agent),ab["score"],"playbook-reputasi" if status=="approved" else None,now if status=="approved" else None,json.dumps(cats)))
     if rows:
         with db() as con:con.executemany("INSERT INTO playbook_actions(id,at,ip,status,reason,alerts,max_level,rules,agent,abuse,decided_by,decided_at,cats) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",rows)
@@ -1068,7 +1069,7 @@ def pb_evaluate(cfg):
     pol=pb_policy();banned,_,_=pb_banned();now=time.time();status={"dry-run":"dry-run","approval":"proposed","auto":"approved"}[cfg["mode"]]
     cands=[]
     with db() as con:
-        made=con.execute("SELECT count(*) FROM playbook_actions WHERE at>?",(now-3600,)).fetchone()[0]
+        made=con.execute("SELECT count(*) FROM playbook_actions WHERE at>? AND (status='dry-run')=?",(now-3600,int(status=="dry-run"))).fetchone()[0]
         for b in pb_candidates(cfg):
             ip=str(b["key"])
             if pb_protected(ip,pol) or ip in banned:continue
@@ -1141,6 +1142,75 @@ def playbook_loop():
         except Exception as exc:logging.warning("playbook loop: %s",type(exc).__name__)
         time.sleep(5)
 
+FEED_TOKEN_FILE=os.environ.get("BAN_FEED_TOKEN_FILE","/etc/soc-automation/feed-token")
+FEED_INTERVAL=15
+
+def feed_token():
+    """Token feed untuk agen di server lain; dibaca dari berkas milik root pada tiap permintaan (bisa diganti tanpa restart)."""
+    try:
+        with open(FEED_TOKEN_FILE,encoding="utf-8") as f:t=f.read().strip()
+        return t if len(t)>=32 else ""
+    except OSError:return ""
+
+def feed_bans():
+    """Ban aktif yang boleh diterapkan agen di server lain: hanya yang sudah lolos pembantu root di server ini dan belum kedaluwarsa."""
+    now=time.time()
+    with db() as con:
+        rows=con.execute("SELECT id,ip,expires_at FROM playbook_actions WHERE status='banned' AND expires_at>? ORDER BY at DESC LIMIT 500",(now,)).fetchall()
+    return [{"id":r[0],"ip":r[1],"expires_at":iso_utc(r[2])} for r in rows]
+
+def feed_hosts_state():
+    now=time.time()
+    try:
+        with db() as con:
+            rows=con.execute("SELECT host,at,ip,applied,failed FROM feed_hosts ORDER BY host").fetchall()
+    except Exception:return []
+    return [{"host":r[0],"last_seen":iso_utc(r[1]),"age_seconds":int(now-r[1]),"ip":r[2],"applied":r[3],"failed":r[4],"stale":now-r[1]>FEED_INTERVAL*6} for r in rows]
+
+_pb_watch={"at":0.0,"data":None,"key":""}
+
+def pb_watch(cfg):
+    """IP sumber dari alert terbaru (sama dengan yang tampil di Alert Management) beserta keputusan playbook untuk tiap IP, agar jelas kenapa sebuah IP muncul atau tidak muncul di daftar aksi. Hanya baca; di-cache 8 detik."""
+    now=time.time();key=json.dumps(cfg,sort_keys=True)
+    if _pb_watch["data"] is not None and now-_pb_watch["at"]<8 and _pb_watch["key"]==key:return _pb_watch["data"]
+    out=[]
+    try:
+        pol=pb_policy();banned,_,_=pb_banned()
+        base_set=set()
+        cmap={}
+        if cfg["mode"]!="off":
+            base_set={str(b["key"]) for b in pb_candidates(cfg)}
+            for b in pb_candidates(dict(cfg,min_alerts=1,suricata_min_alerts=1)):cmap[str(b["key"])]=b
+        rep_set=set()
+        if cfg["rep_mode"]!="off":
+            for b in pb_candidates(dict(cfg,min_alerts=1,suricata_min_alerts=1,window_min=cfg["rep_window_min"],min_level=cfg["rep_min_level"],agents=[])):
+                k=str(b["key"]);rep_set.add(k)
+                if k not in cmap or b["doc_count"]>cmap[k]["doc_count"]:cmap[k]=b
+        def is_public(ip):
+            try:return ipaddress.ip_address(ip).is_global
+            except ValueError:return False
+        cands=sorted((b for k,b in cmap.items() if is_public(k)),key=lambda x:(-x["doc_count"],str(x["key"])))[:30]
+        with db() as con:
+            for b in cands:
+                ip=str(b["key"]);ab=abuse_check(ip,fetch=False)
+                score=ab.get("score") if ab.get("status")=="ok" else None
+                ex=con.execute("SELECT status FROM playbook_actions WHERE ip=? AND at>? ORDER BY at DESC LIMIT 1",(ip,now-86400)).fetchone()
+                rep_ok=ip in rep_set and score is not None and score>=cfg["rep_min_score"]
+                if pb_protected(ip,pol):d=("protected","Dilindungi (daftar putih atau IP privat)")
+                elif ip in banned:d=("banned","Sedang diblokir")
+                elif ex and ex[0] in PB_BLOCKING:d=("handled","Sudah diproses: "+ex[0])
+                elif ip in base_set and (not cfg["min_abuse_score"] or (score is not None and score>=cfg["min_abuse_score"])):d=("match","Memenuhi aturan jumlah alert")
+                elif rep_ok:d=("match","Memenuhi aturan reputasi (%d/100)"%score)
+                elif ip in rep_set and score is None and ab.get("status") in ("pending","error"):d=("wait","Menunggu pengecekan AbuseIPDB")
+                elif ip in rep_set and score is not None and ip not in base_set:d=("below","Skor AbuseIPDB %d, di bawah ambang %d"%(score,cfg["rep_min_score"]))
+                elif ip in base_set:d=("below","Skor AbuseIPDB belum memenuhi syarat aturan jumlah alert")
+                else:d=("below","Belum memenuhi syarat (alert kurang dari ambang)")
+                out.append({"ip":ip,"alerts":int(b["doc_count"]),"max_level":int(b["lvl"]["value"] or 0),"abuse":score,"state":d[0],"decision":d[1],"rules":[str(r["key"]) for r in b.get("rules",{}).get("buckets",[])][:2]})
+    except Exception as exc:logging.warning("playbook watch: %s",type(exc).__name__)
+    res={"window_min":cfg["window_min"] if cfg["rep_mode"]=="off" else max(cfg["window_min"] if cfg["mode"]!="off" else 0,cfg["rep_window_min"]),"min_level":cfg["rep_min_level"] if cfg["rep_mode"]!="off" else cfg["min_level"],"ips":out,"at":iso_utc(now)}
+    _pb_watch["data"]=res;_pb_watch["at"]=now;_pb_watch["key"]=key
+    return res
+
 def pb_state():
     cfg=pb_config();pol=pb_policy();now=time.time()
     with db() as con:
@@ -1153,7 +1223,7 @@ def pb_state():
         except ValueError:x["rules"]=[]
         try:x["cats"]=json.loads(x.get("cats") or "[]")
         except ValueError:x["cats"]=[]
-    return {"config":cfg,"abuse_enabled":bool(ABUSE_KEY),"policy":pol,"helper_alive":pb_helper_alive(),"jail":PB_JAIL,"ban_hours":round(pb_ban_seconds()/3600,1),"actions":acts,"counts_24h":counts,"banned_active":active}
+    return {"config":cfg,"abuse_enabled":bool(ABUSE_KEY),"policy":pol,"helper_alive":pb_helper_alive(),"jail":PB_JAIL,"ban_hours":round(pb_ban_seconds()/3600,1),"actions":acts,"counts_24h":counts,"banned_active":active,"watch":pb_watch(cfg),"eval_interval":PB_EVAL_INTERVAL,"feed":{"enabled":bool(feed_token()),"hosts":feed_hosts_state()}}
 
 def pb_decide(action_id,verb,user):
     """Hasil: (status_http, dict). verb: approve | reject | unban."""
@@ -1297,6 +1367,26 @@ class Handler(BaseHTTPRequestHandler):
         token=new_session(name,role)
         audit("login",name,ip,actor=name)
         json_response(self,200,{"ok":True,"user":name,"role":role["id"]},[("Set-Cookie",self.cookie_header(token,SESSION_ABS))])
+    def ban_feed(self,qs):
+        """Daftar ban aktif untuk agen penarik di server lain. Hanya baca; dilindungi token Bearer (bukan sesi), dengan pembatasan percobaan salah."""
+        token=feed_token()
+        if not token:json_response(self,503,{"error":"Feed ban belum diaktifkan di server"});return
+        key="feed:"+self.client_ip()
+        if too_many_fails(key):json_response(self,429,{"error":"Terlalu banyak percobaan"});return
+        auth=self.headers.get("Authorization","")
+        given=auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        if not hmac.compare_digest(given.encode(),token.encode()):
+            note_fail(key);audit("feed ban ditolak","feed",self.client_ip(),actor="anonim");time.sleep(0.4)
+            json_response(self,401,{"error":"Token tidak valid"});return
+        clear_fails(key)
+        host=re.sub(r"[^A-Za-z0-9._-]","",qs.get("host",[""])[0])[:64] or "tanpa-nama"
+        try:applied=max(0,min(int(qs.get("applied",["0"])[0]),100000));failed=max(0,min(int(qs.get("failed",["0"])[0]),100000))
+        except ValueError:applied=failed=0
+        try:
+            with db() as con:con.execute("INSERT INTO feed_hosts(host,at,ip,applied,failed) VALUES(?,?,?,?,?) ON CONFLICT(host) DO UPDATE SET at=excluded.at,ip=excluded.ip,applied=excluded.applied,failed=excluded.failed",(host,time.time(),self.client_ip(),applied,failed))
+            json_response(self,200,{"generated_at":now_iso(),"interval":FEED_INTERVAL,"bans":feed_bans()})
+        except Exception as exc:
+            logging.warning("ban feed failed: %s",type(exc).__name__);json_response(self,503,{"error":"Feed tidak tersedia"})
     def read_body(self):
         n=int(self.headers.get("Content-Length","0"))
         if n<0 or n>20000:raise ValueError("Request body too large")
@@ -1306,6 +1396,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/","/index.html"):
             self.send_page(INDEX_HTML if self.session() else LOGIN_HTML);return
         if path=="/healthz":json_response(self,200,{"status":"ok"});return
+        if path=="/api/ban-feed":self.ban_feed(qs);return
         sess=self.session()
         if path=="/api/me":
             if sess:json_response(self,200,{"user":sess["user"],"role":sess["role"],"role_name":sess["role_name"],"permissions":sess["permissions"]})
