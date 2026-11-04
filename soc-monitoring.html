@@ -223,6 +223,9 @@ body::after {
 .tone-info { color: var(--accent); }
 .tone-muted { color: var(--muted); }
 .soc-select { font: inherit; font-size: 13px; padding: 6px 8px; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); }
+.soc-area { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); resize: vertical; }
+.soc-area:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#tr-card .soc-tools, #cs-ctl .soc-tools { margin: 8px 0; }
 .soc-select-sm { font-size: 12px; padding: 3px 6px; }
 .soc-btn { font: inherit; font-size: 13px; padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-solid); color: var(--fg); cursor: pointer; }
 .soc-btn:hover { border-color: var(--muted); }
@@ -527,6 +530,22 @@ body::after {
   </div>
 
   <div class="soc-grid">
+    <section class="soc-card soc-wide" id="tr-card" hidden>
+      <h2 id="tr-title">Triage alert</h2>
+      <p class="soc-card-note" id="tr-note"></p>
+      <div class="soc-tools">
+        <select id="tr-status" class="soc-select" aria-label="Status triage"></select>
+        <input id="tr-assignee" class="soc-search" type="text" maxlength="120" placeholder="Ditugaskan ke…" aria-label="Ditugaskan ke">
+      </div>
+      <textarea id="tr-text" class="soc-area" maxlength="2000" rows="2" placeholder="Catatan analis…" aria-label="Catatan triage"></textarea>
+      <div class="soc-tools">
+        <button type="button" class="soc-btn primary" id="tr-save">Simpan triage</button>
+        <input id="tr-case-title" class="soc-search" type="text" maxlength="240" placeholder="Judul kasus baru…" aria-label="Judul kasus">
+        <button type="button" class="soc-btn" id="tr-case">Buat kasus dari alert ini</button>
+        <span class="soc-card-note" id="tr-msg" role="status"></span>
+      </div>
+    </section>
+
     <section class="soc-card soc-wide">
       <h2>Antrean alert</h2>
       <p class="soc-card-note">Alert terbaru dari Wazuh Indexer (hanya baca); waktu dalam WIB (UTC+7). Status triage berasal dari catatan lokal dashboard.</p>
@@ -689,7 +708,7 @@ body::after {
   <div class="soc-grid">
     <section class="soc-card soc-wide">
       <h2>Kasus</h2>
-      <p class="soc-card-note">Kasus lokal yang dibuat dari alert Wazuh (disimpan di database dashboard; alert di Wazuh tidak diubah). Membuat dan mengubah kasus belum bisa dilakukan dari halaman ini.</p>
+      <p class="soc-card-note">Kasus lokal yang dibuat dari alert Wazuh (disimpan di database dashboard; alert di Wazuh tidak diubah). Kasus dibuat dari halaman Alert Management (pilih alert, lalu "Buat kasus"). Pilih kasus di tabel untuk mengubah status, pemilik, dan menambah catatan.</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -709,6 +728,18 @@ body::after {
     <section class="soc-card soc-wide" id="tl-card" hidden>
       <h2 id="tl-title">Timeline kasus</h2>
       <p class="soc-card-note" id="tl-note"></p>
+      <div id="cs-ctl" hidden>
+        <div class="soc-tools">
+          <select id="cs-status" class="soc-select" aria-label="Status kasus"></select>
+          <input id="cs-owner" class="soc-search" type="text" maxlength="120" placeholder="Pemilik kasus…" aria-label="Pemilik kasus">
+          <button type="button" class="soc-btn primary" id="cs-save">Simpan kasus</button>
+        </div>
+        <div class="soc-tools">
+          <input id="cs-note" class="soc-search" type="text" maxlength="2000" placeholder="Tambah catatan ke timeline…" aria-label="Catatan timeline">
+          <button type="button" class="soc-btn" id="cs-add">Tambah catatan</button>
+          <span class="soc-card-note" id="cs-msg" role="status"></span>
+        </div>
+      </div>
       <ol class="timeline" id="tl-list"></ol>
     </section>
 
@@ -1098,6 +1129,7 @@ async function loadLive() {
       id: a.id, time: wzIso(a.timestamp), rule: a.description, level: a.level, srcip: a.srcip || '',
       source: (a.groups || []).find((g) => g !== 'syslog') || (a.groups || [])[0] || 'wazuh',
       severity: a.severity, asset: a.agent, status: stMap[a.triage.status] || 'New',
+      triage: a.triage.status || 'New', assignee: a.triage.assignee || '', note: a.triage.note || '',
     }));
     DATA.top_sources = liveSources(DATA.alerts);
     LIVE.alertTotal = al.total;
@@ -1492,6 +1524,7 @@ function drawOverview() {
 }
 
 // ---- 2. Alert Management ----
+let selAlert = '';
 const isClosed = (s) => s.startsWith('Closed');
 const sevNeedsAttention = (a) => (a.severity === 'Critical' || a.severity === 'High') && !isClosed(a.status);
 
@@ -1524,7 +1557,7 @@ function drawAlerts() {
   const tb = $('tb-alerts');
   tb.replaceChildren();
   rows.forEach((r) => {
-    const tr = el('tr', null, null, tb);
+    const tr = el('tr', 'click' + (r.id === selAlert ? ' sel' : ''), null, tb);
     td(tr, r.id, 'soc-mono');
     td(tr, fmtTime(r.time), 'soc-num');
     sevChip(tr, r.severity);
@@ -1532,11 +1565,84 @@ function drawAlerts() {
     td(tr, r.source, 'soc-opt');
     td(tr, r.asset, 'soc-opt soc-mono');
     statusChip(tr, r.status);
+    tr.addEventListener('click', () => { selAlert = r.id; drawAlerts(); drawTriage(); $('tr-card').scrollIntoView({behavior: 'smooth', block: 'nearest'}); });
   });
   $('am-nomatch').hidden = rows.length > 0 || !DATA.alerts.length;
   if (!DATA.alerts.length) emptyRow(tb, 7);
 }
 ['am-search', 'am-sev', 'am-state'].forEach((id) => $(id).addEventListener('input', drawAlerts));
+
+// ---- Triage alert dan pembuatan kasus (disimpan lokal; alert di Wazuh tidak diubah) ----
+const hasPerm = (p) => !!(LIVE.me && (LIVE.me.permissions || []).includes(p));
+const TRIAGE_OPTS = [['New', 'New'], ['In progress', 'In triage'], ['Escalated', 'Escalated'], ['Closed', 'Closed - TP'], ['False positive', 'Closed - FP']];
+const TRIAGE_LABEL = Object.fromEntries(TRIAGE_OPTS);
+const CASE_OPTS = ['Open', 'Investigating', 'Contained', 'Resolved', 'Closed'];
+TRIAGE_OPTS.forEach(([v, l]) => opt($('tr-status'), v, l));
+CASE_OPTS.forEach((v) => opt($('cs-status'), v));
+
+async function postJson(url, body) {
+  let res;
+  try {
+    res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  } catch (e) { throw new Error('Tidak bisa menghubungi server.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(res.status === 401 ? 'Sesi berakhir, silakan login lagi.' : (data.error || 'Gagal (kode ' + res.status + ').'));
+  return data;
+}
+
+function drawTriage() {
+  const r = DATA.alerts.find((a) => a.id === selAlert);
+  const card = $('tr-card');
+  card.hidden = !r;
+  if (!r) return;
+  const canTriage = hasPerm('triage');
+  $('tr-title').textContent = 'Triage · ' + r.rule;
+  $('tr-note').textContent = r.severity + ' di ' + r.asset + ' · ' + fmtTime(r.time) + (r.srcip ? ' · IP sumber ' + r.srcip : '') + ' · ID ' + r.id
+    + (canTriage ? '' : '. Peran Anda hanya bisa melihat; mengubah triage butuh izin triage.');
+  $('tr-status').value = r.triage;
+  $('tr-assignee').value = r.assignee;
+  $('tr-text').value = r.note;
+  $('tr-case-title').value = r.rule + ' di ' + r.asset;
+  $('tr-msg').textContent = '';
+  ['tr-status', 'tr-assignee', 'tr-text', 'tr-save'].forEach((id) => { $(id).disabled = !canTriage; });
+  const canCase = hasPerm('cases');
+  ['tr-case-title', 'tr-case'].forEach((id) => { $(id).hidden = !canCase; });
+}
+
+$('tr-save').addEventListener('click', async () => {
+  const r = DATA.alerts.find((a) => a.id === selAlert);
+  if (!r) return;
+  const msg = $('tr-msg');
+  msg.textContent = 'Menyimpan…';
+  $('tr-save').disabled = true;
+  try {
+    const body = {alert_id: r.id, status: $('tr-status').value, assignee: $('tr-assignee').value, note: $('tr-text').value};
+    await postJson('api/triage', body);
+    r.triage = body.status; r.status = TRIAGE_LABEL[body.status]; r.assignee = body.assignee.trim(); r.note = body.note;
+    alertStats(); drawAlerts();
+    msg.textContent = 'Tersimpan.';
+  } catch (e) { msg.textContent = e.message; }
+  $('tr-save').disabled = !hasPerm('triage');
+});
+
+$('tr-case').addEventListener('click', async () => {
+  const r = DATA.alerts.find((a) => a.id === selAlert);
+  if (!r) return;
+  const title = $('tr-case-title').value.trim();
+  const msg = $('tr-msg');
+  if (!title) { msg.textContent = 'Isi judul kasus dulu.'; return; }
+  msg.textContent = 'Membuat kasus…';
+  $('tr-case').disabled = true;
+  try {
+    const res = await postJson('api/cases', {title, alert_ids: [r.id], owner: $('tr-assignee').value});
+    const cs = await getJson('api/cases').catch(() => null);
+    if (cs) DATA.cases = cs.cases || [];
+    selCase = res.case_id;
+    drawCases();
+    msg.textContent = 'Kasus ' + res.case_id + ' dibuat. Buka Incident Management untuk melanjutkan.';
+  } catch (e) { msg.textContent = e.message; }
+  $('tr-case').disabled = false;
+});
 
 // ---- 3. AI Investigation (korelasi heuristik lewat api/investigate) ----
 function drawAI() {
@@ -1729,10 +1835,36 @@ async function drawTimeline() {
       el('span', 'tl-meta', fmtTime(e.at) + ' · ' + e.actor, li);
       el('span', null, e.action + (e.details ? ': ' + e.details : ''), li);
     });
+    $('cs-ctl').hidden = !hasPerm('cases');
+    $('cs-status').value = c.status;
+    $('cs-owner').value = c.owner || '';
+    $('cs-msg').textContent = '';
   } catch (e) {
     $('tl-note').textContent = 'Tidak bisa memuat kasus: ' + (e.message || e);
+    $('cs-ctl').hidden = true;
   }
 }
+
+async function caseAction(btn, url, body, done) {
+  const msg = $('cs-msg');
+  msg.textContent = 'Menyimpan…';
+  btn.disabled = true;
+  try {
+    await postJson(url, body);
+    const cs = await getJson('api/cases').catch(() => null);
+    if (cs) DATA.cases = cs.cases || [];
+    drawCases();
+    await drawTimeline();
+    $('cs-msg').textContent = done;
+  } catch (e) { msg.textContent = e.message; }
+  btn.disabled = false;
+}
+$('cs-save').addEventListener('click', (ev) => selCase && caseAction(ev.currentTarget, 'api/cases/' + encodeURIComponent(selCase), {status: $('cs-status').value, owner: $('cs-owner').value}, 'Kasus tersimpan.'));
+$('cs-add').addEventListener('click', (ev) => {
+  const details = $('cs-note').value.trim();
+  if (!selCase || !details) { $('cs-msg').textContent = 'Tulis catatannya dulu.'; return; }
+  caseAction(ev.currentTarget, 'api/cases/' + encodeURIComponent(selCase) + '/timeline', {action: 'Catatan', details}, 'Catatan ditambahkan.').then(() => { $('cs-note').value = ''; });
+});
 
 // ---- 6. Automation Center (konfigurasi active response) ----
 function drawAutomation() {

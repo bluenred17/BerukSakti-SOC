@@ -105,27 +105,54 @@ def save_users(users):
     with os.fdopen(fd,"w",encoding="utf-8") as f:json.dump(users,f,indent=2,sort_keys=True)
     os.chmod(tmp,0o600);os.replace(tmp,USERS_FILE)
 
+SESSION_TOUCH=60
+
+def _sid(token):return hashlib.sha256(token.encode()).hexdigest()
+
+def _session_db(sql,args=()):
+    """Sesi disimpan di SQLite (hanya hash token) agar bertahan setelah restart; kegagalan DB tidak mengganggu sesi di memori."""
+    try:
+        with db() as con:return con.execute(sql,args).fetchall()
+    except Exception as exc:
+        logging.warning("session store: %s",type(exc).__name__);return []
+
+def drop_session(token):
+    if not token:return
+    with SESSIONS_LOCK:SESSIONS.pop(token,None)
+    _session_db("DELETE FROM sessions WHERE sid=?",(_sid(token),))
+
 def revoke_sessions(name):
     with SESSIONS_LOCK:
         for k in [k for k,v in SESSIONS.items() if v["user"]==name]:del SESSIONS[k]
+    _session_db("DELETE FROM sessions WHERE user=?",(name,))
 
 def new_session(user,role):
     token=secrets.token_urlsafe(32);now=time.time()
     with SESSIONS_LOCK:
         for k in [k for k,v in SESSIONS.items() if now-v["created"]>SESSION_ABS or now-v["seen"]>SESSION_IDLE]:del SESSIONS[k]
-        SESSIONS[token]={"user":user,"role":role["id"],"role_name":role["name"],"permissions":sorted(role["permissions"]),"created":now,"seen":now}
+        SESSIONS[token]={"user":user,"role":role["id"],"role_name":role["name"],"permissions":sorted(role["permissions"]),"created":now,"seen":now,"saved":now}
+    _session_db("DELETE FROM sessions WHERE created<? OR seen<?",(now-SESSION_ABS,now-SESSION_IDLE))
+    _session_db("INSERT INTO sessions(sid,user,created,seen) VALUES(?,?,?,?)",(_sid(token),user,now,now))
     return token
 
 def get_session(token):
     if not token:return None
     now=time.time()
+    with SESSIONS_LOCK:s=SESSIONS.get(token)
+    if not s:
+        rows=_session_db("SELECT user,created,seen FROM sessions WHERE sid=?",(_sid(token),))
+        if not rows:return None
+        r=rows[0]
+        s={"user":r["user"],"role":"","role_name":"","permissions":[],"created":r["created"],"seen":r["seen"],"saved":r["seen"]}
+        with SESSIONS_LOCK:SESSIONS[token]=s
+    if now-s["created"]>SESSION_ABS or now-s["seen"]>SESSION_IDLE:
+        drop_session(token);return None
     with SESSIONS_LOCK:
-        s=SESSIONS.get(token)
-        if not s:return None
-        if now-s["created"]>SESSION_ABS or now-s["seen"]>SESSION_IDLE:
-            del SESSIONS[token];return None
-        s["seen"]=now
-        return dict(s)
+        s["seen"]=now;save=now-s["saved"]>=SESSION_TOUCH
+        if save:s["saved"]=now
+        out=dict(s)
+    if save:_session_db("UPDATE sessions SET seen=? WHERE sid=?",(now,_sid(token)))
+    return out
 
 def too_many_fails(*keys):
     now=time.time()
@@ -389,6 +416,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS case_alerts(case_id TEXT NOT NULL,alert_id TEXT NOT NULL,PRIMARY KEY(case_id,alert_id));
         CREATE TABLE IF NOT EXISTS case_timeline(id INTEGER PRIMARY KEY AUTOINCREMENT,case_id TEXT NOT NULL,at TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,details TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,details TEXT NOT NULL DEFAULT '');
+        CREATE TABLE IF NOT EXISTS sessions(sid TEXT PRIMARY KEY,user TEXT NOT NULL,created REAL NOT NULL,seen REAL NOT NULL);
         """)
 
 def audit(action,target,details='',actor='system'):
@@ -433,7 +461,7 @@ class Handler(BaseHTTPRequestHandler):
         u=load_users().get(s["user"])
         role=role_info(u.get("role","readonly")) if isinstance(u,dict) else None
         if not role or u.get("disabled"):
-            with SESSIONS_LOCK:SESSIONS.pop(self.cookie_token(),None)
+            drop_session(self.cookie_token())
             return None
         s["role"]=role["id"];s["role_name"]=role["name"];s["permissions"]=sorted(role["permissions"])
         return s
@@ -582,7 +610,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/login":self.do_login(body);return
         sess=self.session()
         if path=="/api/logout":
-            with SESSIONS_LOCK:SESSIONS.pop(self.cookie_token(),None)
+            drop_session(self.cookie_token())
             if sess:audit("logout",sess["user"],self.client_ip(),actor=sess["user"])
             json_response(self,200,{"ok":True},[("Set-Cookie",self.cookie_header("",0))]);return
         if not sess:json_response(self,401,{"error":"Login diperlukan"});return
