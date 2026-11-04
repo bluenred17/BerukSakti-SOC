@@ -226,6 +226,12 @@ body::after {
 .soc-area { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); resize: vertical; }
 .soc-area:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #tr-card .soc-tools, #cs-ctl .soc-tools { margin: 8px 0; }
+.detail-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 10px 0; font-size: 13px; }
+.detail-grid dt { color: var(--muted); }
+.detail-grid dd { margin: 0; overflow-wrap: anywhere; }
+.detail-log { max-height: 220px; overflow: auto; margin: 6px 0 10px; padding: 10px; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(0, 0, 0, .28); border: 1px solid var(--line); border-radius: var(--radius); }
+.detail-h { margin: 14px 0 4px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+#tr-detail details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .soc-select-sm { font-size: 12px; padding: 3px 6px; }
 .soc-btn { font: inherit; font-size: 13px; padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-solid); color: var(--fg); cursor: pointer; }
 .soc-btn:hover { border-color: var(--muted); }
@@ -533,6 +539,7 @@ body::after {
     <section class="soc-card soc-wide" id="tr-card" hidden>
       <h2 id="tr-title">Triage alert</h2>
       <p class="soc-card-note" id="tr-note"></p>
+      <div id="tr-detail"></div>
       <div class="soc-tools">
         <select id="tr-status" class="soc-select" aria-label="Status triage"></select>
         <input id="tr-assignee" class="soc-search" type="text" maxlength="120" placeholder="Ditugaskan ke…" aria-label="Ditugaskan ke">
@@ -548,9 +555,16 @@ body::after {
 
     <section class="soc-card soc-wide">
       <h2>Antrean alert</h2>
-      <p class="soc-card-note">Alert terbaru dari Wazuh Indexer (hanya baca); waktu dalam WIB (UTC+7). Status triage berasal dari catatan lokal dashboard.</p>
+      <p class="soc-card-note">Alert dari Wazuh Indexer (hanya baca), level 3 ke atas; waktu dalam WIB (UTC+7). Filter dan halaman dijalankan di server, jadi mencakup semua alert pada rentang waktu. Status triage berasal dari catatan lokal dashboard.</p>
       <div class="soc-tools">
-        <input id="am-search" class="soc-search" type="search" placeholder="Cari ID, rule, aset…" aria-label="Cari alert">
+        <input id="am-search" class="soc-search" type="search" placeholder="Cari ID, rule, IP sumber, aset…" aria-label="Cari alert">
+        <select id="am-range" class="soc-select" aria-label="Rentang waktu">
+          <option value="1">24 jam terakhir</option>
+          <option value="3">3 hari</option>
+          <option value="7" selected>7 hari</option>
+          <option value="14">14 hari</option>
+          <option value="30">30 hari</option>
+        </select>
         <select id="am-sev" class="soc-select" aria-label="Filter severity">
           <option value="">Semua severity</option>
           <option>Critical</option>
@@ -558,9 +572,22 @@ body::after {
           <option>Medium</option>
           <option>Low</option>
         </select>
+        <select id="am-agent" class="soc-select" aria-label="Filter agen">
+          <option value="">Semua agen</option>
+        </select>
         <select id="am-state" class="soc-select" aria-label="Filter status triage">
           <option value="open">Belum ditutup</option>
           <option value="">Semua status</option>
+          <option value="New">New</option>
+          <option value="In progress">In triage</option>
+          <option value="Escalated">Escalated</option>
+          <option value="Closed">Closed - TP</option>
+          <option value="False positive">Closed - FP</option>
+        </select>
+        <select id="am-size" class="soc-select" aria-label="Alert per halaman">
+          <option value="25">25 per halaman</option>
+          <option value="50" selected>50 per halaman</option>
+          <option value="100">100 per halaman</option>
         </select>
       </div>
       <div class="soc-tablewrap">
@@ -578,6 +605,11 @@ body::after {
         </table>
       </div>
       <p class="soc-card-note" id="am-nomatch" hidden>Tidak ada alert yang cocok.</p>
+      <div class="soc-tools" id="am-pager">
+        <button type="button" class="soc-btn" id="am-prev">Sebelumnya</button>
+        <button type="button" class="soc-btn" id="am-next">Berikutnya</button>
+        <span class="soc-card-note" id="am-page" role="status"></span>
+      </div>
     </section>
   </div>
 </section>
@@ -1096,6 +1128,14 @@ function liveSources(alerts) {
   return [...map.values()].sort((a, b) => b.alerts - a.alerts).slice(0, 15);
 }
 
+const TRIAGE_CHIP = {'New': 'New', 'In progress': 'In triage', 'Escalated': 'Escalated', 'Closed': 'Closed - TP', 'False positive': 'Closed - FP'};
+const mapAlert = (a) => ({
+  id: a.id, time: wzIso(a.timestamp), rule: a.description, level: a.level, srcip: a.srcip || '',
+  source: (a.groups || []).find((g) => g !== 'syslog') || (a.groups || [])[0] || 'wazuh',
+  severity: a.severity, asset: a.agent, status: TRIAGE_CHIP[a.triage.status] || 'New',
+  triage: a.triage.status || 'New', assignee: a.triage.assignee || '', note: a.triage.note || '',
+});
+
 const mapAudit = (rows) => (rows || []).map((r) => ({time: r.at, user: r.actor, action: r.action, target: r.target}));
 
 async function loadLive() {
@@ -1124,13 +1164,7 @@ async function loadLive() {
   DATA.noisy_rules = (ov.top_rules || []).map((r) => ({rule: r.description + ' (rule ' + r.id + ')', alerts: r.count, level: r.level}));
   DATA.automation = (ov.automation && ov.automation.active_response) || null;
   if (al) {
-    const stMap = {'New': 'New', 'In progress': 'In triage', 'Escalated': 'Escalated', 'Closed': 'Closed - TP', 'False positive': 'Closed - FP'};
-    DATA.alerts = al.alerts.map((a) => ({
-      id: a.id, time: wzIso(a.timestamp), rule: a.description, level: a.level, srcip: a.srcip || '',
-      source: (a.groups || []).find((g) => g !== 'syslog') || (a.groups || [])[0] || 'wazuh',
-      severity: a.severity, asset: a.agent, status: stMap[a.triage.status] || 'New',
-      triage: a.triage.status || 'New', assignee: a.triage.assignee || '', note: a.triage.note || '',
-    }));
+    DATA.alerts = al.alerts.map(mapAlert);
     DATA.top_sources = liveSources(DATA.alerts);
     LIVE.alertTotal = al.total;
     LIVE.alertShown = al.alerts.length;
@@ -1538,25 +1572,21 @@ function alertStats() {
   $('am-t-closed').textContent = fmtInt(n((r) => isClosed(r.status)));
   $('am-t-fp').textContent = fmtInt(n((r) => r.status === 'Closed - FP'));
   $('am-lede').innerHTML = LIVE.on
-    ? '<b>' + fmtInt(LIVE.alertTotal) + '</b> alert level 3 ke atas dalam 7 hari terakhir, <b>' + fmtInt(attention) + '</b> di antaranya level tinggi atau kritis dan belum ditutup. Tabel menampilkan ' + fmtInt(LIVE.alertShown) + ' alert terbaru.'
+    ? '<b>' + fmtInt(LIVE.alertTotal) + '</b> alert level 3 ke atas dalam 7 hari terakhir, <b>' + fmtInt(attention) + '</b> di antaranya level tinggi atau kritis dan belum ditutup. Kartu di atas dihitung dari ' + fmtInt(LIVE.alertShown) + ' alert terbaru; tabel di bawah mencakup semua alert sesuai filter.'
     : 'Tidak ada data untuk ditampilkan.';
   $('badge-alerts').textContent = fmtInt(attention);
   $('badge-alerts').hidden = attention === 0;
 }
 
-function drawAlerts() {
-  const q = $('am-search').value.trim().toLowerCase();
-  const sev = $('am-sev').value;
-  const st = $('am-state').value;
-  const rows = DATA.alerts.filter((r) =>
-    (!sev || r.severity === sev) &&
-    (st === '' || !isClosed(r.status)) &&
-    (!q || [r.id, r.rule, r.asset, r.source, r.srcip].join(' ').toLowerCase().includes(q))
-  ).sort((a, b) => b.time.localeCompare(a.time));
+const AM = {rows: [], total: 0, page: 0, window: 10000, seq: 0, error: ''};
+const SEV_LEVELS = {Critical: [12, null], High: [8, 12], Medium: [4, 8], Low: [3, 4]};
+const findAlert = (id) => AM.rows.find((a) => a.id === id) || DATA.alerts.find((a) => a.id === id);
+const amSize = () => Number($('am-size').value) || 50;
 
+function drawAlerts() {
   const tb = $('tb-alerts');
   tb.replaceChildren();
-  rows.forEach((r) => {
+  AM.rows.forEach((r) => {
     const tr = el('tr', 'click' + (r.id === selAlert ? ' sel' : ''), null, tb);
     td(tr, r.id, 'soc-mono');
     td(tr, fmtTime(r.time), 'soc-num');
@@ -1567,10 +1597,59 @@ function drawAlerts() {
     statusChip(tr, r.status);
     tr.addEventListener('click', () => { selAlert = r.id; drawAlerts(); drawTriage(); $('tr-card').scrollIntoView({behavior: 'smooth', block: 'nearest'}); });
   });
-  $('am-nomatch').hidden = rows.length > 0 || !DATA.alerts.length;
-  if (!DATA.alerts.length) emptyRow(tb, 7);
+  const size = amSize();
+  const pages = Math.max(1, Math.ceil(Math.min(AM.total, AM.window) / size));
+  $('am-nomatch').hidden = true;
+  if (!AM.rows.length) emptyRow(tb, 7, AM.error || 'Tidak ada alert yang cocok dengan filter ini.');
+  $('am-prev').disabled = AM.page <= 0;
+  $('am-next').disabled = AM.page >= pages - 1;
+  $('am-page').textContent = AM.rows.length
+    ? 'Menampilkan ' + fmtInt(AM.page * size + 1) + '–' + fmtInt(AM.page * size + AM.rows.length) + ' dari ' + fmtInt(AM.total) + ' · halaman ' + fmtInt(AM.page + 1) + ' dari ' + fmtInt(pages)
+      + (AM.total > AM.window ? ' · hanya ' + fmtInt(AM.window) + ' alert pertama yang bisa dijelajahi, persempit filter' : '')
+    : '';
 }
-['am-search', 'am-sev', 'am-state'].forEach((id) => $(id).addEventListener('input', drawAlerts));
+
+async function loadAlertPage() {
+  if (!LIVE.on) { AM.rows = []; AM.total = 0; drawAlerts(); return; }
+  const seq = ++AM.seq;
+  const size = amSize();
+  const p = new URLSearchParams({days: $('am-range').value, limit: size, offset: AM.page * size, status: $('am-state').value});
+  const sev = SEV_LEVELS[$('am-sev').value];
+  if (sev) { p.set('min_level', sev[0]); if (sev[1]) p.set('max_level', sev[1]); }
+  if ($('am-agent').value) p.set('agent', $('am-agent').value);
+  const q = $('am-search').value.trim();
+  if (q) p.set('q', q);
+  $('am-page').textContent = 'Memuat…';
+  try {
+    const res = await getJson('api/alerts?' + p);
+    if (seq !== AM.seq) return;
+    AM.rows = res.alerts.map(mapAlert);
+    AM.total = res.total;
+    AM.window = res.window || 10000;
+    AM.error = '';
+  } catch (e) {
+    if (seq !== AM.seq) return;
+    AM.rows = []; AM.total = 0; AM.error = 'Tidak bisa memuat alert: ' + (e.message || e);
+  }
+  drawAlerts();
+}
+
+function fillAgents() {
+  const sel = $('am-agent');
+  const keep = sel.value;
+  const names = [...new Set([...DATA.agents.map((a) => a.host), ...DATA.alerts.map((a) => a.asset)].filter(Boolean))].sort();
+  sel.replaceChildren();
+  opt(sel, '', 'Semua agen');
+  names.forEach((n) => opt(sel, n));
+  sel.value = names.includes(keep) ? keep : '';
+}
+
+const amReload = () => { AM.page = 0; loadAlertPage(); };
+let amTimer = 0;
+$('am-search').addEventListener('input', () => { clearTimeout(amTimer); amTimer = setTimeout(amReload, 350); });
+['am-range', 'am-sev', 'am-agent', 'am-state', 'am-size'].forEach((id) => $(id).addEventListener('change', amReload));
+$('am-prev').addEventListener('click', () => { if (AM.page > 0) { AM.page--; loadAlertPage(); } });
+$('am-next').addEventListener('click', () => { AM.page++; loadAlertPage(); });
 
 // ---- Triage alert dan pembuatan kasus (disimpan lokal; alert di Wazuh tidak diubah) ----
 const hasPerm = (p) => !!(LIVE.me && (LIVE.me.permissions || []).includes(p));
@@ -1591,7 +1670,7 @@ async function postJson(url, body) {
 }
 
 function drawTriage() {
-  const r = DATA.alerts.find((a) => a.id === selAlert);
+  const r = findAlert(selAlert);
   const card = $('tr-card');
   card.hidden = !r;
   if (!r) return;
@@ -1607,10 +1686,120 @@ function drawTriage() {
   ['tr-status', 'tr-assignee', 'tr-text', 'tr-save'].forEach((id) => { $(id).disabled = !canTriage; });
   const canCase = hasPerm('cases');
   ['tr-case-title', 'tr-case'].forEach((id) => { $(id).hidden = !canCase; });
+  loadDetail(r);
+}
+
+// ---- Detail alert lengkap (api/alert-detail): log mentah, field, MITRE, geo, alert terkait ----
+let detailSeq = 0;
+const pick = (o, path) => path.split('.').reduce((v, k) => (v == null ? undefined : v[k]), o);
+const asList = (v) => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v]).map(String);
+
+function factRows(dl, rows) {
+  rows.forEach(([k, v]) => {
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) return;
+    el('dt', null, k, dl);
+    el('dd', null, Array.isArray(v) ? v.join(', ') : String(v), dl);
+  });
+}
+
+async function loadDetail(r) {
+  const box = $('tr-detail');
+  const seq = ++detailSeq;
+  box.replaceChildren();
+  el('p', 'soc-card-note', 'Memuat detail alert…', box);
+  let res;
+  try {
+    res = await getJson('api/alert-detail?alert_id=' + encodeURIComponent(r.id));
+  } catch (e) {
+    if (seq !== detailSeq) return;
+    box.replaceChildren();
+    el('p', 'soc-card-note', 'Detail tidak bisa dimuat: ' + (e.message || e), box);
+    return;
+  }
+  if (seq !== detailSeq) return;
+  const src = res.source || {};
+  const g = src.GeoLocation || {};
+  const mitre = src.rule && src.rule.mitre || {};
+  const ip = pick(src, 'data.srcip') || pick(src, 'data.src_ip') || '';
+  box.replaceChildren();
+
+  el('h3', 'detail-h', 'Ringkasan', box);
+  const dl = el('dl', 'detail-grid', null, box);
+  factRows(dl, [
+    ['Waktu', fmtTime(wzIso(src.timestamp))],
+    ['Rule', pick(src, 'rule.id') ? pick(src, 'rule.id') + ' · level ' + pick(src, 'rule.level') + (pick(src, 'rule.firedtimes') ? ' · terpicu ' + fmtInt(pick(src, 'rule.firedtimes')) + ' kali' : '') : ''],
+    ['Grup rule', asList(pick(src, 'rule.groups'))],
+    ['MITRE', [asList(mitre.id).join('/'), asList(mitre.technique).join(', '), asList(mitre.tactic).join(', ')].filter(Boolean).join(' · ')],
+    ['Agen', [pick(src, 'agent.name'), pick(src, 'agent.id') && 'ID ' + pick(src, 'agent.id'), pick(src, 'agent.ip')].filter(Boolean).join(' · ')],
+    ['Lokasi log', src.location],
+    ['Decoder', pick(src, 'decoder.name')],
+    ['IP sumber', ip],
+    ['Geo IP sumber', [g.city_name, g.country_name].filter(Boolean).join(', ')],
+    ['Skor risiko', res.risk_score != null ? res.risk_score + '/100 (heuristik, bukan model AI)' : ''],
+    ['Index', res.index],
+  ]);
+
+  if (ip) {
+    const row = el('div', 'soc-tools', null, box);
+    const b = el('button', 'soc-btn', 'Cek reputasi ' + ip, row);
+    b.type = 'button';
+    const out = el('span', 'soc-card-note', '', row);
+    out.setAttribute('role', 'status');
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      out.textContent = 'Memeriksa…';
+      try {
+        const x = await getJson('api/ioc?value=' + encodeURIComponent(ip));
+        const ab = x.abuseipdb || {};
+        const parts = [fmtInt(x.observed) + ' kali terlihat di Wazuh (30 hari)'];
+        parts.push((x.lists || []).length ? 'ADA di daftar IOC Wazuh' : 'tidak ada di daftar IOC Wazuh');
+        parts.push(ab.status === 'ok' ? 'AbuseIPDB ' + ab.score + '/100, ' + fmtInt(ab.reports) + ' laporan' : 'AbuseIPDB: ' + (ab.reason || (ab.status === 'disabled' ? 'belum diaktifkan' : 'tidak tersedia')));
+        out.textContent = parts.join(' · ');
+        out.className = ((x.lists || []).length || (ab.status === 'ok' && ab.score >= 50)) ? 'soc-bad' : 'soc-card-note';
+      } catch (e) { out.textContent = 'Gagal: ' + (e.message || e); }
+      b.disabled = false;
+    });
+  }
+
+  if (src.full_log) {
+    el('h3', 'detail-h', 'Log mentah', box);
+    el('pre', 'detail-log', src.full_log, box);
+  }
+
+  const data = src.data && typeof src.data === 'object' ? Object.entries(src.data) : [];
+  if (data.length) {
+    el('h3', 'detail-h', 'Field data (' + data.length + ')', box);
+    const dd = el('dl', 'detail-grid', null, box);
+    data.slice(0, 40).forEach(([k, v]) => {
+      el('dt', null, k, dd);
+      el('dd', 'soc-mono', typeof v === 'object' ? JSON.stringify(v) : String(v), dd);
+    });
+  }
+
+  const rel = (res.correlated || []).filter((c) => c.id !== r.id).slice(0, 10);
+  el('h3', 'detail-h', 'Alert terkait, 24 jam dari agen atau IP yang sama (' + rel.length + (res.correlated.length > 11 ? '+' : '') + ')', box);
+  if (rel.length) {
+    const wrap = el('div', 'soc-tablewrap', null, box);
+    const t = el('table', 'soc-table', null, wrap);
+    const hr = el('tr', null, null, el('thead', null, null, t));
+    ['Waktu', 'Severity', 'Rule', 'IP sumber'].forEach((h) => el('th', null, h, hr));
+    const tb = el('tbody', null, null, t);
+    rel.forEach((c) => {
+      const tr = el('tr', null, null, tb);
+      td(tr, fmtTime(wzIso(c.timestamp)), 'soc-num');
+      sevChip(tr, c.severity);
+      td(tr, c.description);
+      td(tr, c.srcip || '—', 'soc-mono');
+    });
+  } else el('p', 'soc-card-note', 'Tidak ada alert terkait.', box);
+
+  const det = el('details', null, null, box);
+  el('summary', null, 'Semua field (JSON)', det);
+  el('pre', 'detail-log', JSON.stringify(src, null, 2), det);
 }
 
 $('tr-save').addEventListener('click', async () => {
-  const r = DATA.alerts.find((a) => a.id === selAlert);
+  const r = findAlert(selAlert);
   if (!r) return;
   const msg = $('tr-msg');
   msg.textContent = 'Menyimpan…';
@@ -1618,7 +1807,9 @@ $('tr-save').addEventListener('click', async () => {
   try {
     const body = {alert_id: r.id, status: $('tr-status').value, assignee: $('tr-assignee').value, note: $('tr-text').value};
     await postJson('api/triage', body);
-    r.triage = body.status; r.status = TRIAGE_LABEL[body.status]; r.assignee = body.assignee.trim(); r.note = body.note;
+    [AM.rows, DATA.alerts].forEach((list) => list.filter((a) => a.id === r.id).forEach((a) => {
+      a.triage = body.status; a.status = TRIAGE_LABEL[body.status]; a.assignee = body.assignee.trim(); a.note = body.note;
+    }));
     alertStats(); drawAlerts();
     msg.textContent = 'Tersimpan.';
   } catch (e) { msg.textContent = e.message; }
@@ -1626,7 +1817,7 @@ $('tr-save').addEventListener('click', async () => {
 });
 
 $('tr-case').addEventListener('click', async () => {
-  const r = DATA.alerts.find((a) => a.id === selAlert);
+  const r = findAlert(selAlert);
   if (!r) return;
   const title = $('tr-case-title').value.trim();
   const msg = $('tr-msg');
@@ -2425,7 +2616,8 @@ if (LIVE.me) {
 
 drawOverview();
 alertStats();
-drawAlerts();
+fillAgents();
+loadAlertPage();
 drawAI();
 drawIntel();
 drawCases();

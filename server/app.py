@@ -227,9 +227,31 @@ def source_alert(hit):
     s=hit.get("_source",{});r=s.get("rule",{});a=s.get("agent",{});d=s.get("data",{})
     return {"id":hit.get("_id",""),"timestamp":s.get("timestamp",""),"agent":a.get("name","unknown"),"agent_id":a.get("id",""),"rule_id":str(r.get("id","")),"level":int(r.get("level",0)),"severity":severity_name(int(r.get("level",0))),"description":r.get("description",""),"groups":r.get("groups",[]),"mitre":r.get("mitre",{}),"srcip":d.get("srcip",d.get("src_ip","")),"url":d.get("url",""),"hash":d.get("sha256_after",d.get("md5_after","")),"triage":{"status":"New","assignee":"","note":""}}
 
-def get_alert_docs(days=7,limit=300,minimum=3,maximum=None):
+ES_WINDOW=10000
+CLOSED_STATES=("Closed","False positive")
+
+def triage_ids(statuses=None,exclude=None):
+    """ID alert menurut status triage lokal (SQLite); dipakai untuk filter status di sisi server."""
+    with db() as con:
+        if statuses:return [r[0] for r in con.execute("SELECT alert_id FROM triage WHERE status IN (%s)"%",".join("?"*len(statuses)),list(statuses))]
+        if exclude:return [r[0] for r in con.execute("SELECT alert_id FROM triage WHERE status NOT IN (%s)"%",".join("?"*len(exclude)),list(exclude))]
+        return [r[0] for r in con.execute("SELECT alert_id FROM triage")]
+
+def get_alert_docs(days=7,limit=300,minimum=3,maximum=None,offset=0,agent="",q="",status=""):
     filters=[range_filter("timestamp",f"now-{days}d"),level_filter(minimum,maximum)]
-    body={"size":max(1,min(int(limit),500)),"track_total_hits":True,"query":bool_filters(filters),"sort":[{"timestamp":{"order":"desc"}}],"_source":["timestamp","agent.name","agent.id","rule.id","rule.level","rule.description","rule.groups","rule.mitre","data.srcip","data.src_ip","data.url","data.sha256_after","data.md5_after"]}
+    must_not=[]
+    if agent:filters.append({"term":{"agent.name":agent[:120]}})
+    q=q.strip()[:120]
+    if q:
+        esc="".join(chr(92)+c if c in "*?"+chr(92) else c for c in q)
+        filters.append({"bool":{"should":[{"wildcard":{"rule.description":{"value":"*"+esc+"*","case_insensitive":True}}},{"term":{"rule.id":q}},{"term":{"data.srcip":q}},{"term":{"agent.name":q}},{"term":{"_id":q}}],"minimum_should_match":1}})
+    if status=="open":must_not.append({"ids":{"values":triage_ids(statuses=CLOSED_STATES)}})
+    elif status=="New":must_not.append({"ids":{"values":triage_ids()}})
+    elif status in TRIAGE_STATES:filters.append({"ids":{"values":triage_ids(statuses=(status,))}})
+    size=max(1,min(int(limit),500));offset=max(0,min(int(offset),ES_WINDOW-size))
+    query=bool_filters(filters)
+    if must_not:query["bool"]["must_not"]=must_not
+    body={"size":size,"from":offset,"track_total_hits":True,"query":query,"sort":[{"timestamp":{"order":"desc"}}],"_source":["timestamp","agent.name","agent.id","rule.id","rule.level","rule.description","rule.groups","rule.mitre","data.srcip","data.src_ip","data.url","data.sha256_after","data.md5_after"]}
     res=es_search("wazuh-alerts-*",body)
     docs=[source_alert(h) for h in res.get("hits",{}).get("hits",[])]
     ids=[a["id"] for a in docs if a["id"]]
@@ -407,6 +429,23 @@ def investigate(alert_id):
     current['summary']=f"Rule {current['rule_id']} ({current['description']}) fired on {current['agent']}; risk score {score}/100. This is a deterministic triage aid, not an AI verdict."
     return {"alert":current,"correlated":corr,"summary":current['summary'],"risk_score":score,"analysis_mode":current['analysis_mode']}
 
+def clip_values(v,limit=8000,depth=0):
+    """Potong string yang sangat panjang agar detail alert tidak membengkak."""
+    if isinstance(v,str):return v if len(v)<=limit else v[:limit]+"… [dipotong]"
+    if depth>8:return "…"
+    if isinstance(v,dict):return {k:clip_values(x,limit,depth+1) for k,x in list(v.items())[:200]}
+    if isinstance(v,list):return [clip_values(x,limit,depth+1) for x in v[:100]]
+    return v
+
+def alert_detail(alert_id):
+    alert_id=alert_id.strip()[:512]
+    if not alert_id:raise ValueError("alert_id wajib diisi")
+    res=es_search("wazuh-alerts-*",{"size":1,"query":{"ids":{"values":[alert_id]}},"_source":True})
+    hits=res.get("hits",{}).get("hits",[])
+    if not hits:raise KeyError("Alert tidak ditemukan di Wazuh")
+    inv=investigate(alert_id)
+    return {"id":alert_id,"index":hits[0].get("_index",""),"source":clip_values(hits[0].get("_source",{})),"correlated":inv["correlated"],"risk_score":inv["risk_score"]}
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH),exist_ok=True)
     with db() as con:
@@ -552,9 +591,19 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 days=max(1,min(int(qs.get('days',['7'])[0]),30));limit=max(1,min(int(qs.get('limit',['300'])[0]),500))
                 minimum=max(3,min(int(qs.get('min_level',['3'])[0]),15));maximum=qs.get('max_level',[None])[0]
-                docs,total=get_alert_docs(days,limit,minimum,int(maximum) if maximum else None)
-                json_response(self,200,{"total":total,"alerts":docs})
+                offset=max(0,int(qs.get('offset',['0'])[0]))
+                status=qs.get('status',[''])[0]
+                if status and status!="open" and status!="New" and status not in TRIAGE_STATES:raise ValueError("status")
+                docs,total=get_alert_docs(days,limit,minimum,int(maximum) if maximum else None,offset,qs.get('agent',[''])[0],qs.get('q',[''])[0],status)
+                json_response(self,200,{"total":total,"offset":offset,"limit":limit,"window":ES_WINDOW,"alerts":docs})
+            except ValueError:json_response(self,400,{"error":"Parameter tidak valid"})
             except Exception as exc:logging.exception("alerts failed: %s",type(exc).__name__);json_response(self,503,{"error":"Alert query unavailable"})
+            return
+        if path=="/api/alert-detail":
+            try:json_response(self,200,alert_detail(qs.get('alert_id',[''])[0]))
+            except KeyError as exc:json_response(self,404,{"error":str(exc)})
+            except ValueError as exc:json_response(self,400,{"error":str(exc)})
+            except Exception as exc:logging.exception("alert detail failed: %s",type(exc).__name__);json_response(self,503,{"error":"Detail alert tidak tersedia"})
             return
         if path=="/api/investigate":
             try:json_response(self,200,investigate(qs.get('alert_id',[''])[0]))
