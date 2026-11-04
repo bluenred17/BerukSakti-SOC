@@ -880,6 +880,7 @@ body::after {
         <div class="soc-tools">
           <input id="pb-agents" class="soc-search" type="text" placeholder="Agen yang dipantau, pisahkan dengan koma" aria-label="Agen yang dipantau">
           <label class="soc-card-note">skor AbuseIPDB min <input id="pb-abuse" class="soc-search" type="number" min="0" max="100" style="width:5rem;flex:none" aria-label="Skor AbuseIPDB minimum"> (0 = tidak dipakai)</label>
+          <label class="soc-card-note"><input id="pb-suri" type="checkbox"> hitung alert Suricata yang masuk ke server, minimal <input id="pb-suri-n" class="soc-search" type="number" min="1" max="1000" style="width:5rem;flex:none" aria-label="Minimal alert Suricata"> alert</label>
           <label class="soc-card-note">maks usulan/jam <input id="pb-max" class="soc-search" type="number" min="1" max="100" style="width:5rem;flex:none" aria-label="Maksimal usulan per jam"></label>
           <button type="button" class="soc-btn primary" id="pb-save">Simpan pengaturan</button>
           <span class="soc-card-note" id="pb-msg" role="status"></span>
@@ -2968,7 +2969,7 @@ function drawPlaybook() {
   if (!d) { $('pb-rule').textContent = 'Status playbook tidak bisa dimuat dari server.'; return; }
   const c = d.config;
   $('pb-rule').textContent = 'Aturan: IP publik yang bukan di daftar putih dan memicu minimal ' + c.min_alerts + ' alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' dalam ' + c.window_min + ' menit di agen ' + (c.agents.length ? c.agents.join(', ') : 'mana pun')
-    + (c.min_abuse_score ? ' dan berskor AbuseIPDB minimal ' + c.min_abuse_score : '') + ' dicatat sesuai mode. Pemblokiran dijalankan di jail fail2ban "' + d.jail + '" (UFW, semua port).';
+    + (c.suricata ? ', atau minimal ' + c.suricata_min_alerts + ' alert Suricata yang masuk ke server' : '') + (c.min_abuse_score ? ' dan berskor AbuseIPDB minimal ' + c.min_abuse_score : '') + ' dicatat sesuai mode. Pemblokiran dijalankan di jail fail2ban "' + d.jail + '" (UFW, semua port).';
   $('pb-t-mode').textContent = PB_MODE[c.mode] || c.mode;
   $('pb-t-mode-sub').textContent = c.mode === 'auto' ? 'memblokir tanpa klik' : c.mode === 'approval' ? 'butuh klik Setujui' : c.mode === 'dry-run' ? 'tidak memblokir apa pun' : 'tidak mengevaluasi';
   $('pb-t-prop').textContent = fmtInt(d.counts_24h.proposed || 0);
@@ -2986,6 +2987,7 @@ function drawPlaybook() {
     $('pb-mode').value = c.mode; $('pb-level').value = String(c.min_level);
     $('pb-alerts').value = c.min_alerts; $('pb-window').value = c.window_min; $('pb-agents').value = c.agents.join(', ');
     $('pb-abuse').value = c.min_abuse_score; $('pb-max').value = c.max_per_hour;
+    $('pb-suri').checked = !!c.suricata; $('pb-suri-n').value = c.suricata_min_alerts;
   }
 
   const tb = $('tb-pb');
@@ -3044,7 +3046,7 @@ $('pb-save').addEventListener('click', async () => {
   m.textContent = 'Menyimpan…';
   try {
     DATA.pb = await postJson('api/playbook/config', {mode, confirm_auto: mode === 'auto', min_level: $('pb-level').value, min_alerts: $('pb-alerts').value, window_min: $('pb-window').value,
-      agents: $('pb-agents').value.split(',').map((x) => x.trim()).filter(Boolean), min_abuse_score: $('pb-abuse').value || 0, max_per_hour: $('pb-max').value});
+      agents: $('pb-agents').value.split(',').map((x) => x.trim()).filter(Boolean), min_abuse_score: $('pb-abuse').value || 0, max_per_hour: $('pb-max').value, suricata: $('pb-suri').checked, suricata_min_alerts: $('pb-suri-n').value});
     m.textContent = 'Tersimpan.';
     drawPlaybook();
   } catch (e) { m.textContent = e.message; }

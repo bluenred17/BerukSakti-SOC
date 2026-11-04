@@ -821,7 +821,7 @@ PB_BEAT=os.environ.get("PLAYBOOK_HEARTBEAT","/var/lib/soc-automation-dashboard/b
 PB_JAIL="beruk-playbook"
 PB_EVAL_INTERVAL=int(os.environ.get("PLAYBOOK_EVAL_INTERVAL","60"))
 PB_MODES=("off","dry-run","approval","auto")
-PB_DEFAULTS={"mode":"dry-run","min_level":8,"min_alerts":5,"window_min":10,"agents":["VM-11-51-ubuntu"],"min_abuse_score":0,"max_per_hour":10}
+PB_DEFAULTS={"mode":"dry-run","min_level":8,"min_alerts":5,"window_min":10,"agents":["VM-11-51-ubuntu"],"min_abuse_score":0,"max_per_hour":10,"suricata":True,"suricata_min_alerts":3}
 PB_BLOCKING=("proposed","approved","executing","banned","rejected","unbanned")
 
 def pb_config():
@@ -839,12 +839,15 @@ def pb_validate(body):
     if "mode" in body:
         if body["mode"] not in PB_MODES:raise ValueError("Mode tidak dikenal")
         out["mode"]=body["mode"]
-    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(1,100)}.items():
+    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(1,100),"suricata_min_alerts":(1,1000)}.items():
         if k in body:
             try:v=int(body[k])
             except (TypeError,ValueError):raise ValueError(k+" harus berupa angka")
             if not lo<=v<=hi:raise ValueError("%s harus antara %d dan %d"%(k,lo,hi))
             out[k]=v
+    if "suricata" in body:
+        if not isinstance(body["suricata"],bool):raise ValueError("suricata harus true atau false")
+        out["suricata"]=body["suricata"]
     if "agents" in body:
         if not isinstance(body["agents"],list):raise ValueError("agents harus berupa daftar")
         out["agents"]=[str(x).strip()[:120] for x in body["agents"] if str(x).strip()][:10]
@@ -901,10 +904,24 @@ def pb_wait(rid,timeout=25):
     return None
 
 def pb_candidates(cfg):
-    flt=[range_filter("timestamp",f"now-{cfg['window_min']}m"),level_filter(cfg["min_level"]),{"exists":{"field":"data.srcip"}}]
-    if cfg["agents"]:flt.append({"terms":{"agent.name":cfg["agents"]}})
-    res=es_search("wazuh-alerts-*",{"size":0,"query":bool_filters(flt),"aggs":{"ips":{"terms":{"field":"data.srcip","size":100,"min_doc_count":cfg["min_alerts"]},"aggs":{"lvl":{"max":{"field":"rule.level"}},"rules":{"terms":{"field":"rule.id","size":5}},"agent":{"terms":{"field":"agent.name","size":1}}}}}})
-    return res.get("aggregations",{}).get("ips",{}).get("buckets",[])
+    """IP penyerang dari alert Wazuh (data.srcip) dan, bila diaktifkan, dari alert Suricata yang masuk ke server (data.src_ip, arah to_server).
+    Alert Suricata arah to_client sengaja diabaikan: sumbernya server luar yang kita hubungi (mis. repositori paket), bukan penyerang."""
+    base=[range_filter("timestamp",f"now-{cfg['window_min']}m"),level_filter(cfg["min_level"])]
+    if cfg["agents"]:base.append({"terms":{"agent.name":cfg["agents"]}})
+    sub={"lvl":{"max":{"field":"rule.level"}},"rules":{"terms":{"field":"rule.id","size":5}},"agent":{"terms":{"field":"agent.name","size":1}}}
+    res=es_search("wazuh-alerts-*",{"size":0,"query":bool_filters(base+[{"exists":{"field":"data.srcip"}}]),"aggs":{"ips":{"terms":{"field":"data.srcip","size":100,"min_doc_count":cfg["min_alerts"]},"aggs":sub}}})
+    out=res.get("aggregations",{}).get("ips",{}).get("buckets",[])
+    if cfg.get("suricata"):
+        sub2=dict(sub);sub2["rules"]={"terms":{"field":"data.alert.signature","size":3}}
+        r2=es_search("wazuh-alerts-*",{"size":0,"query":bool_filters(base+[{"term":{"rule.groups":"suricata"}},{"term":{"data.direction":"to_server"}},{"exists":{"field":"data.src_ip"}}]),"aggs":{"ips":{"terms":{"field":"data.src_ip","size":200,"min_doc_count":cfg["suricata_min_alerts"]},"aggs":sub2}}})
+        seen={str(b["key"]):b for b in out}
+        for b in r2.get("aggregations",{}).get("ips",{}).get("buckets",[]):
+            for r in b["rules"]["buckets"]:r["key"]="Suricata: "+str(r["key"])[:70]
+            k=str(b["key"])
+            if k in seen:
+                o=seen[k];o["doc_count"]+=b["doc_count"];o["lvl"]["value"]=max(o["lvl"]["value"] or 0,b["lvl"]["value"] or 0);o["rules"]["buckets"]=(o["rules"]["buckets"]+b["rules"]["buckets"])[:6]
+            else:out.append(b);seen[k]=b
+    return out
 
 def pb_evaluate(cfg):
     """Cari IP yang memenuhi syarat dan catat sebagai simulasi, usulan, atau (mode auto) aksi yang langsung disetujui."""
