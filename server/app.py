@@ -58,7 +58,7 @@ COOKIE_NAME="soc_session"
 # RBAC: urutan izin sama dengan urutan digit pada tiap peran (1 = diizinkan).
 # Kolom ketiga: apakah fitur di balik izin itu sudah ada di dashboard.
 PERMISSIONS=[("view","Lihat dashboard",True),("triage","Triage alert",True),("cases","Kelola insiden & kasus",True),("playbook","Jalankan playbook",True),("approve","Setujui aksi otomatis",True),("integrations","Kelola integrasi",False),("users","Kelola pengguna & peran",True),("audit","Lihat audit log",True),("ai","Pakai chat AI",True)]
-ROLE_DEFS=[("admin","Administrator","111111111"),("manager","SOC Manager","111110011"),("analyst_t3","SOC Analyst T3","111110001"),("analyst_t2","SOC Analyst T2","111100001"),("analyst_t1","SOC Analyst T1","110000001"),("readonly","Read-only","100000010")]
+ROLE_DEFS=[("admin","Administrator","111111111"),("manager","SOC Manager","111110011"),("analyst_t3","SOC Analyst T3","111110001"),("analyst_t2","SOC Analyst T2","111100001"),("analyst_t1","SOC Analyst T1","110000001"),("readonly","Read-only","100000011")]
 ROLE_ALIAS={"viewer":"readonly","analyst":"analyst_t2"}
 
 def role_info(role):
@@ -760,6 +760,7 @@ AI_TIMEOUT=120
 AI_CHAT_DAILY_LIMIT=int(os.environ.get("AI_CHAT_DAILY_LIMIT","300"))
 AI_CHAT_HOURLY_USER=int(os.environ.get("AI_CHAT_HOURLY_USER","30"))
 AI_CHAT_MAX_TOKENS=int(os.environ.get("AI_CHAT_MAX_TOKENS","3000"))
+AI_ROLE_DAILY={"readonly":int(os.environ.get("AI_CHAT_DAILY_READONLY","3"))}  # kuota chat per pengguna per hari (UTC) untuk peran tertentu
 AI_COOLDOWN=30
 AI_VERDICTS=("benign","suspicious","malicious","needs_more_data")
 AI_LEVELS=("low","medium","high")
@@ -810,6 +811,13 @@ def ai_analysis_calls():
     """Analisis alert hari ini (UTC), dengan aturan hitung yang sama seperti ai_usage: galat tanpa token tidak dihitung."""
     try:
         with db() as con:return int(con.execute("SELECT count(*) FROM ai_log WHERE alert_id!='chat' AND at>=? AND (status!='error' OR in_tokens>0 OR out_tokens>0)",(time.time()//86400*86400,)).fetchone()[0])
+    except Exception:return 0
+
+def ai_user_used(user):
+    """Chat AI yang sudah terpakai pengguna ini hari ini (UTC); galat tanpa token tidak dihitung, jadi kuota tidak hangus karena penyedia bermasalah."""
+    try:
+        with db() as con:
+            return int(con.execute("SELECT count(*) FROM ai_log WHERE alert_id='chat' AND user=? AND at>=? AND (status!='error' OR in_tokens>0 OR out_tokens>0)",(user,time.time()//86400*86400)).fetchone()[0])
     except Exception:return 0
 
 def ai_status():
@@ -982,7 +990,7 @@ def chat_context(view):
         _chat_ctx["data"]=json.dumps(ctx,ensure_ascii=False,default=str)[:9000].replace("<","\\u003c");_chat_ctx["at"]=now
     return _chat_ctx["data"]
 
-def ai_chat(user,messages,view=""):
+def ai_chat(user,messages,view="",role=""):
     """Hasil: (status_http, dict). Percakapan singkat dengan model; model tidak punya alat dan tidak bisa mengubah apa pun."""
     reason=ai_config_error()
     if reason:return 503,{"error":reason}
@@ -994,6 +1002,8 @@ def ai_chat(user,messages,view=""):
         if c:msgs.append({"role":m["role"],"content":c})
     if not msgs or msgs[-1]["role"]!="user":return 400,{"error":"Pesan terakhir harus dari pengguna"}
     while msgs[0]["role"]!="user":msgs.pop(0)
+    quota=AI_ROLE_DAILY.get(role)
+    if quota is not None and ai_user_used(user)>=quota:return 429,{"error":"Batas chat AI untuk peran Anda (%d per hari) sudah habis; coba lagi besok (reset 07:00 WIB)"%quota,"limit":quota}
     if ai_chat_calls()>=AI_CHAT_DAILY_LIMIT:return 429,{"error":"Batas chat AI harian tercapai (%d)"%AI_CHAT_DAILY_LIMIT}
     if ai_chat_calls(time.time()-3600,user)>=AI_CHAT_HOURLY_USER:return 429,{"error":"Terlalu banyak pertanyaan dalam satu jam, coba lagi nanti"}
     with _ai_lock:
@@ -1594,7 +1604,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path=="/api/ai/status":
             if not can(sess,"ai"):json_response(self,200,{"enabled":False,"allowed":False,"reason":"Peran %s tidak boleh memakai AI"%sess.get("role_name","Anda")});return
-            try:json_response(self,200,dict(ai_status(),allowed=True))
+            try:
+                st=dict(ai_status(),allowed=True);q=AI_ROLE_DAILY.get(sess.get("role",""))
+                if q is not None:st["user_limit"]=q;st["user_used"]=ai_user_used(sess["user"])
+                json_response(self,200,st)
             except Exception as exc:logging.exception("ai status failed: %s",type(exc).__name__);json_response(self,503,{"error":"Status AI tidak tersedia"})
             return
         if path=="/api/ai/analysis":
@@ -1708,7 +1721,7 @@ class Handler(BaseHTTPRequestHandler):
             with db() as con:con.execute("INSERT INTO sla_cfg(k,v) VALUES('targets',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",(json.dumps(targets),))
             audit("sla pengaturan","sla",json.dumps(targets)[:300],sess['user']);json_response(self,200,{"sla":sla_config()});return
         if path=="/api/ai/chat":
-            status,out=ai_chat(sess['user'],body.get('messages'),str(body.get('view','')));json_response(self,status,out);return
+            status,out=ai_chat(sess['user'],body.get('messages'),str(body.get('view','')),sess.get('role',''));json_response(self,status,out);return
         if path=="/api/ai/analyze":
             status,out=ai_analyze(str(body.get('alert_id','')),sess['user'],bool(body.get('force')))
             json_response(self,status,out);return

@@ -3877,11 +3877,23 @@ function answer(raw) {
 // Swap this for a real backend call later; keep the same block format in the reply.
 const CHAT = {hist: [], ai: null};
 
+function chatQuotaLeft() {
+  const a = CHAT.ai;
+  return a && a.user_limit != null ? Math.max(0, a.user_limit - (a.user_used || 0)) : null;
+}
+
+function chatAiOn() {
+  const a = CHAT.ai, left = chatQuotaLeft();
+  return !!(a && a.enabled && (left == null || left > 0));
+}
+
 function chatMode() {
-  const a = CHAT.ai, on = !!(a && a.enabled);
-  $('chat-sub').textContent = on ? 'AI · ' + a.model + ' · data Wazuh' : 'Mode aturan · data Wazuh';
-  $('chat-foot').textContent = on
-    ? 'Dijawab model AI dari ringkasan data SOC. AI bisa keliru, verifikasi sebelum bertindak. Pemakaian dicatat di Administration.'
+  const a = CHAT.ai, on = !!(a && a.enabled), left = chatQuotaLeft(), usable = chatAiOn();
+  $('chat-sub').textContent = usable ? 'AI · ' + a.model + (left != null ? ' · sisa ' + left + ' dari ' + a.user_limit + ' hari ini' : ' · data Wazuh') : 'Mode aturan · data Wazuh';
+  $('chat-foot').textContent = on && left === 0
+    ? 'Batas chat AI untuk peran Anda (' + a.user_limit + ' per hari) sudah habis; memakai mode aturan sampai reset 07:00 WIB.'
+    : usable
+    ? 'Dijawab model AI dari ringkasan data SOC. AI bisa keliru, verifikasi sebelum bertindak. Pemakaian dicatat di Administration.' + (left != null ? ' Peran Anda dibatasi ' + a.user_limit + ' chat AI per hari.' : '')
     : 'Jawaban disusun dari data Wazuh dengan aturan kata kunci' + (a ? (a.allowed === false ? ' (' + a.reason + ').' : ' (AI belum aktif: ' + (a.reason || 'tidak tersedia') + ').') : '.');
 }
 
@@ -3908,12 +3920,14 @@ function aiBlocks(text) {
 
 async function askAssistant(text) {
   let note = '';
-  if (CHAT.ai && CHAT.ai.enabled) {
+  if (chatAiOn()) {
     try {
       const r = await postJson('api/ai/chat', {messages: [...CHAT.hist, {role: 'user', content: text}], view: currentView()});
       if (r.reply) {
         CHAT.hist.push({role: 'user', content: text}, {role: 'assistant', content: r.reply});
         CHAT.hist = CHAT.hist.slice(-8);
+        if (CHAT.ai && CHAT.ai.user_limit != null) { CHAT.ai.user_used = (CHAT.ai.user_used || 0) + 1; chatMode(); }
+        loadChatAi();
         return aiBlocks(r.reply).concat(r.truncated ? [{p: '(Jawaban terpotong karena batas panjang.)'}] : []);
       }
       note = 'AI menolak menjawab' + (r.reason ? ' (' + r.reason + ')' : '');

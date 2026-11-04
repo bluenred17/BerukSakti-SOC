@@ -5,38 +5,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Masuk · Beruk Sakti</title>
 <style>
-:root { color-scheme: dark; --bg: #070b12; --panel: #111924; --fg: #e4eaf0; --muted: #8d9cac; --line: #233040; --accent: #5b9de0; --bad: #f06a6a; }
+:root { color-scheme: dark; --bg: #060a11; --panel: #111924; --fg: #e4eaf0; --muted: #8d9cac; --line: #233040; --accent: #5b9de0; --cyan: #22d3ee; --bad: #f06a6a; --ok: #4cc287; }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: radial-gradient(60rem 40rem at 85% -10%, rgba(99,102,241,.16), transparent 60%), radial-gradient(50rem 36rem at -5% 110%, rgba(34,211,238,.12), transparent 60%), var(--bg); color: var(--fg); font: 14px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
-.card { width: min(100%, 380px); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px 24px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--accent); margin-bottom: 18px; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; position: relative; overflow: hidden; background: radial-gradient(60rem 40rem at 85% -10%, rgba(99,102,241,.18), transparent 60%), radial-gradient(50rem 36rem at -5% 110%, rgba(34,211,238,.14), transparent 60%), var(--bg); color: var(--fg); font: 14px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+
+/* Latar SOC: kisi, topologi jaringan yang hidup, dan radar */
+.bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.bg-grid { background-image: linear-gradient(rgba(94,160,220,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(94,160,220,.07) 1px, transparent 1px); background-size: 48px 48px; -webkit-mask-image: radial-gradient(ellipse at center, #000 35%, transparent 85%); mask-image: radial-gradient(ellipse at center, #000 35%, transparent 85%); }
+#net { width: 100%; height: 100%; display: block; }
+.radar { position: fixed; z-index: 0; right: -14vmin; bottom: -14vmin; width: 70vmin; height: 70vmin; border-radius: 50%; pointer-events: none; opacity: .55;
+  background: repeating-radial-gradient(circle at center, transparent 0, transparent 7.5vmin, rgba(34,211,238,.13) 7.5vmin, rgba(34,211,238,.13) 7.7vmin); }
+.radar::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, rgba(34,211,238,0) 0deg, rgba(34,211,238,0) 300deg, rgba(34,211,238,.28) 358deg, rgba(34,211,238,0) 360deg); animation: sweep 9s linear infinite; }
+.radar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(34,211,238,.1); box-shadow: 0 0 0 0 transparent; }
+@keyframes sweep { to { transform: rotate(360deg); } }
+.vignette { position: fixed; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 40%, rgba(3,6,10,.7) 100%); }
+
+.wrap { position: relative; z-index: 1; width: min(100%, 380px); }
+.card { background: rgba(17,25,36,.84); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 12px; padding: 28px 24px; box-shadow: 0 12px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(91,157,224,.06); }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--accent); margin-bottom: 6px; }
 .brand b { display: block; color: var(--fg); font: 20px/1.2 Georgia, "Times New Roman", serif; font-weight: 400; }
 .brand small { color: var(--muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.tag { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; padding: 0; list-style: none; }
+.tag li { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--cyan); border: 1px solid rgba(34,211,238,.28); border-radius: 999px; padding: 2px 8px; background: rgba(34,211,238,.06); }
 label { display: block; margin: 14px 0 6px; color: var(--muted); font-size: 12px; }
-input { width: 100%; padding: 10px 12px; font: inherit; color: var(--fg); background: #0b111a; border: 1px solid var(--line); border-radius: 8px; }
+input { width: 100%; padding: 10px 12px; font: inherit; color: var(--fg); background: rgba(8,13,21,.8); border: 1px solid var(--line); border-radius: 8px; }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button { width: 100%; margin-top: 20px; padding: 10px 12px; font: inherit; font-weight: 600; color: #04121f; background: var(--accent); border: 0; border-radius: 8px; cursor: pointer; }
 button:disabled { opacity: .6; cursor: default; }
 .err { min-height: 1.4em; margin: 14px 0 0; color: var(--bad); font-size: 13px; }
 .note { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
+.status { position: fixed; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.status i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+@media (max-width: 560px) { .status { display: none; } .radar { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .radar::before { animation: none; } }
 </style>
 </head>
 <body>
-<main class="card">
-  <div class="brand">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/></svg>
-    <span><b>Beruk Sakti</b><small>Monitoring</small></span>
-  </div>
-  <form id="f" autocomplete="on">
-    <label for="u">Nama pengguna</label>
-    <input id="u" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
-    <label for="p">Kata sandi</label>
-    <input id="p" name="password" type="password" autocomplete="current-password" required>
-    <p class="err" id="err" role="alert"></p>
-    <button id="go" type="submit">Masuk</button>
-  </form>
-  <p class="note">Belum punya akun? Minta administrator menambahkannya di server.</p>
-</main>
+<div class="bg bg-grid" aria-hidden="true"></div>
+<canvas id="net" class="bg" aria-hidden="true"></canvas>
+<div class="radar" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<div class="wrap">
+  <main class="card">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/></svg>
+      <span><b>Beruk Sakti</b><small>Monitoring · SOC Automation</small></span>
+    </div>
+    <ul class="tag" aria-label="Kemampuan">
+      <li>Deteksi</li><li>Triage</li><li>Respons otomatis</li>
+    </ul>
+    <form id="f" autocomplete="on">
+      <label for="u">Nama pengguna</label>
+      <input id="u" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+      <label for="p">Kata sandi</label>
+      <input id="p" name="password" type="password" autocomplete="current-password" required>
+      <p class="err" id="err" role="alert"></p>
+      <button id="go" type="submit">Masuk</button>
+    </form>
+    <p class="note">Belum punya akun? Minta administrator menambahkannya di server.</p>
+  </main>
+</div>
+<div class="status" aria-hidden="true"><i></i>Wazuh · Suricata · fail2ban</div>
+
 <script>
 const f = document.getElementById('f');
 const err = document.getElementById('err');
@@ -61,6 +92,92 @@ f.addEventListener('submit', async (ev) => {
   }
   go.disabled = false;
 });
+
+// Latar: topologi jaringan yang hidup. Titik biru = aset, merah = sumber ancaman; denyut merah merambat ke aset lalu "tertahan" (cincin hijau).
+(() => {
+  const cv = document.getElementById('net');
+  const ctx = cv.getContext && cv.getContext('2d');
+  if (!ctx) return;
+  const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W = 0, H = 0, nodes = [], pulses = [], rings = [], raf = 0, last = 0;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const LINK = () => Math.max(110, Math.min(170, Math.min(W, H) / 5));
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.max(24, Math.min(90, Math.round((W * H) / 15000)));
+    nodes = Array.from({length: n}, () => ({x: rnd(0, W), y: rnd(0, H), vx: rnd(-.16, .16), vy: rnd(-.16, .16), r: rnd(1.3, 2.4), threat: Math.random() < .07}));
+    pulses = []; rings = [];
+    if (still) draw();
+  }
+
+  function links() {
+    const d = LINK(), out = [];
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y, dist = Math.hypot(dx, dy);
+      if (dist < d) out.push([i, j, 1 - dist / d]);
+    }
+    return out;
+  }
+
+  function spawnPulse(ls) {
+    const cand = ls.filter(([i, j]) => nodes[i].threat !== nodes[j].threat);
+    if (!cand.length) return;
+    const [a, b] = cand[Math.floor(Math.random() * cand.length)];
+    const from = nodes[a].threat ? a : b, to = from === a ? b : a;
+    pulses.push({from, to, t: 0, speed: rnd(.006, .012)});
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const ls = links();
+    ctx.lineWidth = 1;
+    for (const [i, j, k] of ls) {
+      const hot = nodes[i].threat || nodes[j].threat;
+      ctx.strokeStyle = hot ? 'rgba(240,106,106,' + (k * .22) + ')' : 'rgba(91,157,224,' + (k * .34) + ')';
+      ctx.beginPath(); ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[j].x, nodes[j].y); ctx.stroke();
+    }
+    for (const n of nodes) {
+      ctx.fillStyle = n.threat ? 'rgba(240,106,106,.9)' : 'rgba(120,180,240,.85)';
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.threat ? n.r + .8 : n.r, 0, 6.2832); ctx.fill();
+      if (n.threat) { ctx.strokeStyle = 'rgba(240,106,106,.18)'; ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 5, 0, 6.2832); ctx.stroke(); }
+    }
+    for (const p of pulses) {
+      const a = nodes[p.from], b = nodes[p.to], x = a.x + (b.x - a.x) * p.t, y = a.y + (b.y - a.y) * p.t;
+      ctx.fillStyle = 'rgba(255,140,140,.95)'; ctx.shadowColor = 'rgba(240,106,106,.9)'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 6.2832); ctx.fill(); ctx.shadowBlur = 0;
+    }
+    for (const r of rings) {
+      ctx.strokeStyle = 'rgba(76,194,135,' + (.7 * (1 - r.t)) + ')'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(r.x, r.y, 4 + r.t * 22, 0, 6.2832); ctx.stroke();
+    }
+  }
+
+  function step(now) {
+    raf = requestAnimationFrame(step);
+    if (document.hidden) return;
+    const dt = Math.min(48, now - last || 16) / 16; last = now;
+    for (const n of nodes) {
+      n.x += n.vx * dt; n.y += n.vy * dt;
+      if (n.x < -10 || n.x > W + 10) n.vx *= -1;
+      if (n.y < -10 || n.y > H + 10) n.vy *= -1;
+    }
+    for (const p of pulses) p.t += p.speed * dt;
+    for (const p of pulses.filter((q) => q.t >= 1)) rings.push({x: nodes[p.to].x, y: nodes[p.to].y, t: 0});
+    pulses = pulses.filter((p) => p.t < 1);
+    for (const r of rings) r.t += .018 * dt;
+    rings = rings.filter((r) => r.t < 1);
+    if (Math.random() < .018 * dt && pulses.length < 5) spawnPulse(links());
+    draw();
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  if (!still) raf = requestAnimationFrame(step);
+})();
 </script>
 </body>
 </html>
