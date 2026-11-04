@@ -1217,9 +1217,14 @@ body::after {
       <p class="soc-card-note" id="aiu-note">Memuat…</p>
       <div class="soc-tiles">
         <div class="soc-tile">
-          <span class="soc-tile-label">Analisis hari ini</span>
+          <span class="soc-tile-label">Analisis alert hari ini</span>
           <span class="soc-tile-value"><span id="aiu-t-calls">—</span><span class="soc-unit">dari <span id="aiu-t-limit">—</span></span></span>
           <span class="soc-tile-sub">batas harian</span>
+        </div>
+        <div class="soc-tile">
+          <span class="soc-tile-label">Chat hari ini</span>
+          <span class="soc-tile-value"><span id="aiu-t-chat">—</span><span class="soc-unit">dari <span id="aiu-t-chat-limit">—</span></span></span>
+          <span class="soc-tile-sub"><b id="aiu-t-chat-tok">—</b> token</span>
         </div>
         <div class="soc-tile">
           <span class="soc-tile-label">Token hari ini</span>
@@ -1229,7 +1234,7 @@ body::after {
         <div class="soc-tile">
           <span class="soc-tile-label">14 hari</span>
           <span class="soc-tile-value" id="aiu-t-14">—</span>
-          <span class="soc-tile-sub"><b id="aiu-t-14calls">—</b> analisis</span>
+          <span class="soc-tile-sub"><b id="aiu-t-14calls">—</b> panggilan</span>
         </div>
         <div class="soc-tile">
           <span class="soc-tile-label">Perkiraan biaya, 14 hari</span>
@@ -1248,13 +1253,28 @@ body::after {
         <table class="soc-table">
           <thead><tr>
             <th>Hari (UTC)</th>
-            <th class="soc-num">Analisis</th>
+            <th class="soc-num">Panggilan</th>
             <th class="soc-num">Token masuk</th>
             <th class="soc-num">Token keluar</th>
             <th class="soc-num">Total</th>
             <th class="soc-opt" style="width:30%"></th>
           </tr></thead>
           <tbody id="tb-aiu-days"></tbody>
+        </table>
+      </div>
+
+      <h3 class="detail-h">Per fitur (30 hari)</h3>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Fitur</th>
+            <th class="soc-num">Panggilan</th>
+            <th class="soc-num">Token masuk</th>
+            <th class="soc-num">Token keluar</th>
+            <th class="soc-num soc-opt">Gagal</th>
+            <th class="soc-num soc-opt">Perkiraan biaya</th>
+          </tr></thead>
+          <tbody id="tb-aiu-feat"></tbody>
         </table>
       </div>
 
@@ -1295,7 +1315,7 @@ body::after {
             <th class="soc-num">Waktu</th>
             <th>Pengguna</th>
             <th class="soc-opt">Model</th>
-            <th class="soc-opt">Alert</th>
+            <th class="soc-opt">Fitur</th>
             <th class="soc-num">Token masuk / keluar</th>
             <th>Status</th>
             <th class="soc-num soc-opt">Durasi</th>
@@ -1365,7 +1385,7 @@ body::after {
   <header class="chat-head">
     <div class="chat-title">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
-      <span>Asisten SOC<small>Berbasis aturan · menjawab dari data Wazuh</small></span>
+      <span>Asisten SOC<small id="chat-sub">Memeriksa AI…</small></span>
     </div>
     <button type="button" class="chat-icon" id="chat-clear" title="Mulai percakapan baru" aria-label="Mulai percakapan baru">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 1 0 1.6-7.3L4 10"/></svg>
@@ -1382,7 +1402,7 @@ body::after {
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
     </button>
   </form>
-  <p class="chat-foot">Jawaban disusun dari data Wazuh di dashboard dengan aturan kata kunci, bukan dari model AI.</p>
+  <p class="chat-foot" id="chat-foot">Memeriksa ketersediaan AI…</p>
 </aside>
 </div>
 
@@ -2803,6 +2823,16 @@ function drawUsers() {
     td(tr, fmtTime(u.created_at), 'soc-num soc-opt');
     const act = td(tr, null);
     if (manage && !self) {
+      const rs = el('select', 'soc-select', null, act);
+      rs.setAttribute('aria-label', 'Ubah peran ' + u.name);
+      DATA.rbac.roles.forEach((r) => opt(rs, r.id, r.name));
+      const curRole = (DATA.rbac.roles.find((r) => r.id === u.role) || {}).id || (u.role === 'analyst' ? 'analyst_t2' : u.role === 'viewer' ? 'readonly' : u.role);
+      rs.value = curRole;
+      rs.addEventListener('change', () => {
+        if (rs.value === curRole) return;
+        if (confirm('Ubah peran ' + u.name + ' dari ' + roleName(curRole) + ' menjadi ' + roleName(rs.value) + '? Hak akses berlaku langsung.')) userAction('role', {username: u.name, role: rs.value});
+        else rs.value = curRole;
+      });
       const tog = el('button', 'soc-btn', u.disabled ? 'Aktifkan' : 'Nonaktifkan', act);
       tog.type = 'button';
       tog.addEventListener('click', () => userAction(u.disabled ? 'enable' : 'disable', {username: u.name}));
@@ -2857,8 +2887,12 @@ function drawAiUsage() {
   $('aiu-note').textContent = d.enabled
     ? 'Dihitung dari token yang dilaporkan penyedia (' + d.provider + '). Hari dihitung dalam UTC, jadi pergantian hari terjadi pukul 07:00 WIB. Rincian per pengguna dan model hanya mencakup panggilan sejak pencatatan ini dipasang.'
     : 'AI belum aktif: ' + d.reason + '.';
-  $('aiu-t-calls').textContent = fmtInt(d.today.calls);
+  const ft = d.features_today || {analysis: d.today, chat: {calls: 0, in_tokens: 0, out_tokens: 0}};
+  $('aiu-t-calls').textContent = fmtInt(ft.analysis.calls);
   $('aiu-t-limit').textContent = fmtInt(d.limit);
+  $('aiu-t-chat').textContent = fmtInt(ft.chat.calls);
+  $('aiu-t-chat-limit').textContent = fmtInt(d.chat_limit || 0);
+  $('aiu-t-chat-tok').textContent = fmtInt(ft.chat.in_tokens + ft.chat.out_tokens);
   $('aiu-t-tokens').textContent = fmtInt(d.today.in_tokens + d.today.out_tokens);
   $('aiu-t-in').textContent = fmtInt(d.today.in_tokens);
   $('aiu-t-out').textContent = fmtInt(d.today.out_tokens);
@@ -2898,6 +2932,8 @@ function drawAiUsage() {
     });
     if (!rows.length) emptyRow(tb, 6, empty);
   };
+  const f30 = d.features_30d || {};
+  grp('tb-aiu-feat', [['analysis', 'Analisis alert'], ['chat', 'Chat asisten']].map(([k, n]) => Object.assign({name: n}, f30[k] || {calls: 0, in_tokens: 0, out_tokens: 0, errors: 0, cost: null})), 'Belum ada pemakaian.');
   grp('tb-aiu-users', d.by_user, 'Belum ada panggilan tercatat.');
   grp('tb-aiu-models', d.by_model, 'Belum ada panggilan tercatat.');
 
@@ -2908,7 +2944,7 @@ function drawAiUsage() {
     td(tr, fmtTime(x.at), 'soc-num');
     td(tr, x.user, 'soc-mono');
     td(tr, x.model, 'soc-opt soc-mono');
-    td(tr, x.alert_id.slice(0, 12) + '…', 'soc-opt soc-mono');
+    td(tr, x.alert_id === 'chat' ? 'Chat' : 'Analisis ' + x.alert_id.slice(0, 8) + '…', 'soc-opt soc-mono');
     td(tr, fmtInt(x.in_tokens) + ' / ' + fmtInt(x.out_tokens), 'soc-num');
     chip(tr, x.status === 'ok' ? 'Berhasil' : x.status === 'refused' ? 'Ditolak' : 'Gagal', 'tone-' + (x.status === 'ok' ? 'ok' : x.status === 'refused' ? 'warn' : 'bad'));
     td(tr, x.seconds ? x.seconds.toFixed(1) + ' dtk' : '—', 'soc-num soc-opt');
@@ -3330,7 +3366,7 @@ const NO_DATA = [{p: 'Dashboard belum terhubung ke Wazuh, jadi saya tidak punya 
 
 function ansHelp() {
   return [
-    {p: 'Halo! Saya asisten SOC (berbasis aturan, bukan model AI). Saya menjawab dari data Wazuh yang tampil di dashboard. Contoh yang bisa ditanyakan:'},
+    {p: CHAT.ai && CHAT.ai.enabled ? 'Halo! Saya asisten SOC berbasis model AI. Saya menjawab dari ringkasan data Wazuh, Suricata, dan playbook di dashboard, dan tidak bisa menjalankan tindakan. Contoh yang bisa ditanyakan:' : 'Halo! Saya asisten SOC (berbasis aturan, bukan model AI). Saya menjawab dari data Wazuh yang tampil di dashboard. Contoh yang bisa ditanyakan:'},
     {ul: [
       'Ringkas kondisi SOC hari ini',
       'Alert kritis apa saja?',
@@ -3497,10 +3533,55 @@ function answer(raw) {
 }
 
 // Swap this for a real backend call later; keep the same block format in the reply.
+const CHAT = {hist: [], ai: null};
+
+function chatMode() {
+  const a = CHAT.ai, on = !!(a && a.enabled);
+  $('chat-sub').textContent = on ? 'AI · ' + a.model + ' · data Wazuh' : 'Mode aturan · data Wazuh';
+  $('chat-foot').textContent = on
+    ? 'Dijawab model AI dari ringkasan data SOC. AI bisa keliru, verifikasi sebelum bertindak. Pemakaian dicatat di Administration.'
+    : 'Jawaban disusun dari data Wazuh dengan aturan kata kunci' + (a ? ' (AI belum aktif: ' + (a.reason || 'tidak tersedia') + ').' : '.');
+}
+
+async function loadChatAi() {
+  try { CHAT.ai = await getJson('api/ai/status'); } catch (e) { CHAT.ai = null; }
+  chatMode();
+}
+
+// Teks polos dari model diubah menjadi blok paragraf dan daftar; isi tidak pernah dipasang sebagai HTML.
+function aiBlocks(text) {
+  const out = [];
+  let list = null, para = [];
+  const flush = () => { if (para.length) { out.push({p: para.join(' ')}); para = []; } };
+  text.split('\n').forEach((line) => {
+    const t = line.trim();
+    const m = /^[-*•]\s+(.*)$/.exec(t);
+    if (m) { flush(); if (!list) { list = []; out.push({ul: list}); } list.push(m[1]); }
+    else if (!t) { flush(); list = null; }
+    else { list = null; para.push(t); }
+  });
+  flush();
+  return out.length ? out : [{p: text}];
+}
+
 async function askAssistant(text) {
+  let note = '';
+  if (CHAT.ai && CHAT.ai.enabled) {
+    try {
+      const r = await postJson('api/ai/chat', {messages: [...CHAT.hist, {role: 'user', content: text}], view: currentView()});
+      if (r.reply) {
+        CHAT.hist.push({role: 'user', content: text}, {role: 'assistant', content: r.reply});
+        CHAT.hist = CHAT.hist.slice(-8);
+        return aiBlocks(r.reply).concat(r.truncated ? [{p: '(Jawaban terpotong karena batas panjang.)'}] : []);
+      }
+      note = 'AI menolak menjawab' + (r.reason ? ' (' + r.reason + ')' : '');
+    } catch (e) { note = e.message; }
+    loadChatAi();
+    note = 'AI tidak tersedia sekarang: ' + note + ' Memakai mode aturan.';
+  }
   const reply = await answer(text);
   await new Promise((resolve) => setTimeout(resolve, 300));
-  return reply;
+  return note ? [{p: note}].concat(reply) : reply;
 }
 
 const chatLog = $('chat-log');
@@ -3573,6 +3654,7 @@ function setChat(open, focus) {
 }
 
 function resetChat() {
+  CHAT.hist = [];
   chatLog.replaceChildren();
   addMsg('bot', ansHelp());
 }
@@ -3599,6 +3681,7 @@ function initChat() {
     if (ev.key === 'Escape' && chatOverlay() && document.querySelector('.app').classList.contains('chat-open')) setChat(false, true);
   });
   resetChat();
+  loadChatAi().then(() => { if (!chatLog.querySelector('.msg.user')) resetChat(); });
   // Open by default only where there is room to dock it; otherwise keep the viewer's last choice.
   let saved = null;
   try { saved = localStorage.getItem('socChatOpen'); } catch (e) {}
