@@ -17,7 +17,7 @@ Status lengkap, keputusan teknis, dan daftar tugas ada di [PROGRESS.md](PROGRESS
 
 ## Dashboard
 
-Delapan modul di sidebar kiri, ditambah Asisten SOC di sisi kanan (aturan kata kunci, bukan model AI) dan peta latar dengan busur dari IP sumber alert (GeoIP Wazuh).
+Sembilan modul di sidebar kiri, ditambah Asisten SOC di sisi kanan (aturan kata kunci, bukan model AI) dan peta latar dengan busur dari IP sumber alert (GeoIP Wazuh).
 
 | Modul | Isi |
 |---|---|
@@ -28,6 +28,7 @@ Delapan modul di sidebar kiri, ditambah Asisten SOC di sisi kanan (aturan kata k
 | Incident Management | Kasus lokal, timeline, audit log |
 | Automation Center | Status active response Wazuh |
 | SIEM Health | Cluster, layanan, agen, EPS, peringatan pipeline |
+| Fail2ban | Jail, IP yang sedang diblokir, riwayat ban/unban, skor AbuseIPDB (hanya baca) |
 | Administration | Koneksi, pengguna, matriks RBAC, integrasi (hanya administrator) |
 
 Bagian yang tidak punya sumber di Wazuh (playbook, persetujuan aksi, MTTD/MTTR) tidak ditampilkan atau dikosongkan. Tidak ada data contoh. Semua waktu dalam WIB (UTC+7).
@@ -70,6 +71,7 @@ Frontend memanggil `api/...` dengan URL **relatif** (Caddy membuang prefix `/soc
 | `server/app.py` | Backend: login, sesi, RBAC, API Wazuh |
 | `server/login.html` | Halaman login |
 | `server/manage_users.py` | CLI kelola akun di VPS |
+| `server/fail2ban/` | Pembantu root (skrip + unit systemd) yang membuat snapshot status fail2ban |
 | `google-search.html`, `vercel.json` | Halaman pencarian dan konfigurasi Vercel |
 | `docs/` | Desain awal lab Wazuh (sebagian usang) |
 
@@ -82,6 +84,18 @@ Layanan: `soc-automation-dashboard` (systemd) di `/opt/soc-automation-dashboard/
 3. Cek: `healthz` 200, `api/overview` tanpa login 401, `/` menampilkan form login. Bila gagal, kembalikan cadangan.
 
 Restart mengeluarkan semua pengguna (sesi disimpan di memori). Uji perubahan backend dulu di instance terpisah (port lain, sandbox systemd yang sama), bukan di layanan produksi.
+
+## Pembantu fail2ban
+
+Socket dan database fail2ban hanya bisa dibuka root, sedangkan dashboard berjalan sebagai `socauto`. Karena itu `server/fail2ban/` berisi skrip kecil milik root yang membaca status fail2ban tiap 30 detik dan menulis satu berkas JSON (`/var/lib/soc-automation-dashboard/fail2ban.json`, `root:socauto`, mode 640). Dashboard hanya membaca berkas itu, tidak mendapat hak tambahan, dan halamannya hanya memantau (tanpa unban).
+
+```bash
+sudo install -o root -g root -m 750 server/fail2ban/soc-fail2ban-snapshot /usr/local/sbin/soc-fail2ban-snapshot
+sudo install -m 644 server/fail2ban/soc-fail2ban-snapshot.service server/fail2ban/soc-fail2ban-snapshot.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now soc-fail2ban-snapshot.timer
+```
+
+Zona waktu server tidak dipakai di tampilan: waktu log dikonversi ke UTC oleh skrip, lalu ditampilkan dalam WIB (UTC+7).
 
 ## Kelola akun dari terminal
 

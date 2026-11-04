@@ -1,0 +1,10 @@
+[Unit]
+Description=Jalankan snapshot fail2ban tiap 30 detik
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

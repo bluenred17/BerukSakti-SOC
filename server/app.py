@@ -458,6 +458,22 @@ def investigate(alert_id):
     current['summary']=f"Rule {current['rule_id']} ({current['description']}) fired on {current['agent']}; risk score {score}/100. This is a deterministic triage aid, not an AI verdict."
     return {"alert":current,"correlated":corr,"summary":current['summary'],"risk_score":score,"analysis_mode":current['analysis_mode']}
 
+F2B_FILE=os.environ.get("FAIL2BAN_FILE","/var/lib/soc-automation-dashboard/fail2ban.json")
+F2B_STALE=120
+
+def fail2ban_data():
+    """Snapshot fail2ban yang ditulis pembantu root (soc-fail2ban-snapshot); dashboard hanya membacanya."""
+    try:
+        with open(F2B_FILE,encoding="utf-8") as f:d=json.load(f)
+    except FileNotFoundError:return {"available":False,"reason":"Pembantu snapshot fail2ban belum terpasang di server."}
+    except Exception as exc:
+        logging.warning("fail2ban snapshot unreadable: %s",type(exc).__name__)
+        return {"available":False,"reason":"Berkas snapshot fail2ban tidak bisa dibaca."}
+    try:age=max(0,int(time.time()-datetime.fromisoformat(d.get("generated_at","")).timestamp()))
+    except ValueError:age=10**9
+    d["available"]=True;d["age_seconds"]=age;d["stale"]=age>F2B_STALE
+    return d
+
 def clip_values(v,limit=8000,depth=0):
     """Potong string yang sangat panjang agar detail alert tidak membengkak."""
     if isinstance(v,str):return v if len(v)<=limit else v[:limit]+"… [dipotong]"
@@ -629,6 +645,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:json_response(self,400,{"error":"Parameter tidak valid"})
             except Exception as exc:logging.exception("alerts failed: %s",type(exc).__name__);json_response(self,503,{"error":"Alert query unavailable"})
             return
+        if path=="/api/fail2ban":json_response(self,200,fail2ban_data());return
         if path=="/api/ip-reputation":
             try:json_response(self,200,ip_reputation(qs.get('ips',[''])[0].split(',')[:40],qs.get('lookup',['0'])[0]=='1'))
             except Exception as exc:logging.exception("ip reputation failed: %s",type(exc).__name__);json_response(self,503,{"error":"Reputasi IP tidak tersedia"})

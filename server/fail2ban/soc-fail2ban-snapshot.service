@@ -1,0 +1,18 @@
+[Unit]
+Description=Snapshot status fail2ban untuk dashboard Beruk Sakti (hanya baca)
+After=fail2ban.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/soc-fail2ban-snapshot --out /var/lib/soc-automation-dashboard/fail2ban.json --group socauto
+User=root
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/soc-automation-dashboard
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+MemoryMax=96M
+TimeoutStartSec=30

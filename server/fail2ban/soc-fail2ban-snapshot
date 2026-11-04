@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Ambil status fail2ban sebagai satu berkas JSON untuk dashboard (hanya baca).
+
+Dijalankan sebagai root oleh timer systemd karena socket dan database fail2ban hanya bisa dibuka root.
+Dashboard (user socauto) cukup membaca berkas keluarannya, jadi tidak mendapat hak tambahan.
+Tidak mengubah konfigurasi atau status fail2ban.
+"""
+import argparse
+import grp
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import tempfile
+from datetime import datetime, timezone
+
+CLIENT = "/usr/bin/fail2ban-client"
+DB = "/var/lib/fail2ban/fail2ban.sqlite3"
+LOG = "/var/log/fail2ban.log"
+LOG_TAIL_BYTES = 400_000
+MAX_EVENTS = 100
+MAX_HISTORY = 100
+IP_RE = re.compile(r"^[0-9A-Fa-f:.]{2,45}$")
+LOG_RE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+\s+\S+\s+\[\d+\]:\s+\w+\s+\[([^\]]+)\]\s+(Ban|Unban|Restore Ban)\s+(\S+)")
+
+
+def iso(ts):
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds")
+
+
+def run(*args):
+    out = subprocess.run([CLIENT, *args], capture_output=True, text=True, timeout=8)
+    if out.returncode != 0:
+        raise RuntimeError((out.stderr or out.stdout).strip()[:200] or "fail2ban-client gagal")
+    return out.stdout
+
+
+def num(text, label):
+    m = re.search(re.escape(label) + r":\s*(-?\d+)", text)
+    return int(m.group(1)) if m else 0
+
+
+def jail_info(name):
+    text = run("status", name)
+    m = re.search(r"Banned IP list:\s*(.*)", text)
+    banned = [ip for ip in (m.group(1).split() if m else []) if IP_RE.match(ip)]
+    info = {
+        "name": name,
+        "currently_failed": num(text, "Currently failed"),
+        "total_failed": num(text, "Total failed"),
+        "currently_banned": num(text, "Currently banned"),
+        "total_banned": num(text, "Total banned"),
+        "banned_ips": banned,
+    }
+    for key in ("maxretry", "findtime", "bantime"):
+        try:
+            info[key] = int(run("get", name, key).strip())
+        except Exception:
+            info[key] = None
+    return info
+
+
+def read_db(banned):
+    """Riwayat ban dari database fail2ban (hanya baca) dan detail ban yang sedang berlaku."""
+    history, since = [], {}
+    if not os.path.exists(DB):
+        return history, since
+    con = sqlite3.connect("file:%s?mode=ro" % DB, uri=True, timeout=5)
+    try:
+        for jail, ip, at, bantime, count in con.execute(
+                "SELECT jail, ip, timeofban, bantime, bancount FROM bans ORDER BY timeofban DESC LIMIT ?", (MAX_HISTORY,)):
+            history.append({"jail": jail, "ip": ip, "at": iso(at), "bantime": bantime, "bancount": count})
+        for jail, ips in banned.items():
+            for ip in ips:
+                row = con.execute(
+                    "SELECT timeofban, bantime, bancount FROM bans WHERE jail=? AND ip=? ORDER BY timeofban DESC LIMIT 1", (jail, ip)).fetchone()
+                if row:
+                    since[(jail, ip)] = {"since": iso(row[0]), "bantime": row[1], "bancount": row[2]}
+    finally:
+        con.close()
+    return history, since
+
+
+def read_events():
+    """Kejadian Ban/Unban terbaru dari log fail2ban (zona waktu server -> UTC)."""
+    if not os.path.exists(LOG):
+        return []
+    with open(LOG, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - LOG_TAIL_BYTES))
+        lines = f.read().decode("utf-8", "replace").splitlines()
+    events = []
+    for line in lines:
+        m = LOG_RE.match(line)
+        if not m or not IP_RE.match(m.group(4)):
+            continue
+        at = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").astimezone(timezone.utc)
+        events.append({"at": at.isoformat(timespec="seconds"), "jail": m.group(2), "action": m.group(3), "ip": m.group(4)})
+    return events[-MAX_EVENTS:][::-1]
+
+
+def snapshot():
+    data = {"generated_at": iso(datetime.now(timezone.utc).timestamp()), "ok": False, "error": "", "version": "", "jails": [], "history": [], "events": []}
+    banned = {}
+    try:
+        data["version"] = run("version").strip()
+        if "pong" not in run("ping").lower():
+            raise RuntimeError("fail2ban tidak menjawab")
+        names = re.search(r"Jail list:\s*(.*)", run("status"))
+        for name in [n.strip() for n in (names.group(1).split(",") if names else []) if n.strip()]:
+            info = jail_info(name)
+            banned[name] = info["banned_ips"]
+            data["jails"].append(info)
+        data["ok"] = True
+    except Exception as exc:
+        data["error"] = str(exc)[:200]
+    try:
+        data["history"], since = read_db(banned)
+        for jail in data["jails"]:
+            jail["banned"] = []
+            for ip in jail.pop("banned_ips"):
+                d = {"ip": ip}
+                d.update(since.get((jail["name"], ip), {}))
+                jail["banned"].append(d)
+    except Exception as exc:
+        data["error"] = (data["error"] + "; " if data["error"] else "") + "database: " + str(exc)[:100]
+        for jail in data["jails"]:
+            jail["banned"] = [{"ip": ip} for ip in jail.pop("banned_ips", [])]
+    try:
+        data["events"] = read_events()
+    except Exception as exc:
+        data["error"] = (data["error"] + "; " if data["error"] else "") + "log: " + str(exc)[:100]
+    return data
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--group", default="")
+    args = ap.parse_args()
+    payload = snapshot()
+    d = os.path.dirname(args.out) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".f2b-")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+    os.chmod(tmp, 0o640)
+    if args.group:
+        os.chown(tmp, 0, grp.getgrnam(args.group).gr_gid)
+    os.replace(tmp, args.out)
+
+
+if __name__ == "__main__":
+    main()

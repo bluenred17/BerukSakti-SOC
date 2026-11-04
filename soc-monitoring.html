@@ -169,6 +169,8 @@ body::after {
 .soc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 12px; }
 .soc-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .soc-wide { grid-column: 1 / -1; }
+.soc-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .soc-pair { grid-template-columns: minmax(0, 1fr); } }
 .soc-grid[hidden] { display: none; }
 /* Honest empty state: shown instead of a section whose real data is missing, never filled with sample numbers */
 .soc-empty { display: grid; gap: 4px; padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 13px; }
@@ -394,6 +396,11 @@ body::after {
     SIEM Health
     <span class="side-badge warn" id="badge-siem" title="Sumber log dan agen bermasalah">—</span>
   </a>
+  <a class="side-link" href="#fail2ban" data-view="fail2ban">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.2 7.8 8 9 4.8-1.2 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>
+    Fail2ban
+    <span class="side-badge warn" id="badge-f2b" title="IP yang sedang diblokir fail2ban" hidden>—</span>
+  </a>
   <a class="side-link" href="#admin" data-view="admin">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
     Administration
@@ -447,55 +454,57 @@ body::after {
       <div class="soc-chart" id="chart-volume"></div>
     </section>
 
-    <section class="soc-card">
-      <h2>Distribusi severity</h2>
-      <p class="soc-card-note">Total alert 7 hari terakhir menurut severity (level Wazuh 3 ke atas).</p>
-      <div class="sev-bar" id="sev-bar"></div>
-      <table class="soc-table">
-        <thead><tr>
-          <th>Severity</th>
-          <th class="soc-num">Alert</th>
-          <th class="soc-num">Porsi</th>
-          <th class="soc-num">vs 7 hari sebelumnya</th>
-        </tr></thead>
-        <tbody id="tb-sev"></tbody>
-      </table>
-    </section>
-
-    <section class="soc-card">
-      <h2>Ancaman teratas</h2>
-      <p class="soc-card-note">Deskripsi rule dengan alert terbanyak, 7 hari terakhir.</p>
-      <div class="soc-tablewrap">
+    <div class="soc-wide soc-pair">
+      <section class="soc-card">
+        <h2>Distribusi severity</h2>
+        <p class="soc-card-note">Total alert 7 hari terakhir menurut severity (level Wazuh 3 ke atas).</p>
+        <div class="sev-bar" id="sev-bar"></div>
         <table class="soc-table">
           <thead><tr>
-            <th>Ancaman</th>
+            <th>Severity</th>
             <th class="soc-num">Alert</th>
+            <th class="soc-num">Porsi</th>
+            <th class="soc-num">vs 7 hari sebelumnya</th>
           </tr></thead>
-          <tbody id="tb-threats"></tbody>
+          <tbody id="tb-sev"></tbody>
         </table>
-      </div>
-    </section>
+      </section>
 
-    <section class="soc-card soc-wide">
-      <h2>Alert per taktik MITRE ATT&amp;CK</h2>
-      <p class="soc-card-note">7 hari terakhir, dari tag MITRE pada rule Wazuh. Tiga taktik terbanyak disorot.</p>
-      <div class="soc-chart" id="chart-tactics" style="min-height:272px"></div>
-    </section>
+      <section class="soc-card">
+        <h2>Alert per taktik MITRE ATT&amp;CK</h2>
+        <p class="soc-card-note">7 hari terakhir, dari tag MITRE pada rule Wazuh. Tiga taktik terbanyak disorot.</p>
+        <div class="soc-chart" id="chart-tactics" style="min-height:272px"></div>
+      </section>
 
-    <section class="soc-card">
-      <h2>Rule level tinggi teratas</h2>
-      <p class="soc-card-note">Rule level 10 ke atas dengan alert terbanyak, 7 hari terakhir.</p>
-      <div class="soc-tablewrap">
-        <table class="soc-table">
-          <thead><tr>
-            <th>Rule</th>
-            <th class="soc-num">Alert</th>
-            <th class="soc-num">Level</th>
-          </tr></thead>
-          <tbody id="tb-noisy"></tbody>
-        </table>
-      </div>
-    </section>
+      <section class="soc-card">
+        <h2>Ancaman teratas</h2>
+        <p class="soc-card-note">Deskripsi rule dengan alert terbanyak, 7 hari terakhir.</p>
+        <div class="soc-tablewrap">
+          <table class="soc-table">
+            <thead><tr>
+              <th>Ancaman</th>
+              <th class="soc-num">Alert</th>
+            </tr></thead>
+            <tbody id="tb-threats"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="soc-card">
+        <h2>Rule level tinggi teratas</h2>
+        <p class="soc-card-note">Rule level 10 ke atas dengan alert terbanyak, 7 hari terakhir.</p>
+        <div class="soc-tablewrap">
+          <table class="soc-table">
+            <thead><tr>
+              <th>Rule</th>
+              <th class="soc-num">Alert</th>
+              <th class="soc-num">Level</th>
+            </tr></thead>
+            <tbody id="tb-noisy"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </div>
 </section>
 
@@ -927,6 +936,100 @@ body::after {
 </section>
 
 <!-- 8. Administration -->
+<!-- Fail2ban -->
+<section class="soc-view" id="view-fail2ban" hidden>
+  <header class="soc-head">
+    <h1 class="soc-title">Fail2ban</h1>
+    <p class="soc-lede" id="f2b-lede">Memuat status fail2ban…</p>
+    <p class="live-note" id="f2b-status"></p>
+  </header>
+
+  <div class="soc-tiles">
+    <div class="soc-tile">
+      <span class="soc-tile-label">Status</span>
+      <span class="soc-tile-value" id="f2b-t-state">—</span>
+      <span class="soc-tile-sub" id="f2b-t-ver">layanan fail2ban</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Jail aktif</span>
+      <span class="soc-tile-value" id="f2b-t-jails">—</span>
+      <span class="soc-tile-sub">aturan pemblokiran</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Sedang diblokir</span>
+      <span class="soc-tile-value" id="f2b-t-banned">—</span>
+      <span class="soc-tile-sub">IP saat ini</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Total ban</span>
+      <span class="soc-tile-value" id="f2b-t-total">—</span>
+      <span class="soc-tile-sub">sejak fail2ban berjalan</span>
+    </div>
+    <div class="soc-tile">
+      <span class="soc-tile-label">Percobaan gagal</span>
+      <span class="soc-tile-value" id="f2b-t-failed">—</span>
+      <span class="soc-tile-sub"><b id="f2b-t-failed-total">—</b> total</span>
+    </div>
+  </div>
+
+  <div class="soc-grid">
+    <section class="soc-card soc-wide">
+      <h2>Jail</h2>
+      <p class="soc-card-note">Aturan pemblokiran dan ambangnya. Ban dijatuhkan bila ada <i>maxretry</i> percobaan gagal dalam <i>findtime</i>.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>Jail</th>
+            <th class="soc-num">Gagal sekarang</th>
+            <th class="soc-num">Total gagal</th>
+            <th class="soc-num">Diblokir sekarang</th>
+            <th class="soc-num">Total ban</th>
+            <th class="soc-opt">Ambang</th>
+            <th class="soc-opt">Lama ban</th>
+          </tr></thead>
+          <tbody id="tb-f2b-jails"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>IP yang sedang diblokir</h2>
+      <p class="soc-card-note">Skor AbuseIPDB (0–100) diambil otomatis, 50 ke atas ditandai merah. Halaman ini hanya memantau; unban dilakukan di server.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th>IP</th>
+            <th>Jail</th>
+            <th class="soc-num">Diblokir sejak</th>
+            <th class="soc-num soc-opt">Berakhir</th>
+            <th class="soc-num soc-opt">Ban ke-</th>
+            <th>AbuseIPDB</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="tb-f2b-banned"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Kejadian terbaru</h2>
+      <p class="soc-card-note">Ban dan unban terbaru dari log fail2ban; waktu dalam WIB (UTC+7).</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr>
+            <th class="soc-num">Waktu</th>
+            <th>Aksi</th>
+            <th>Jail</th>
+            <th>IP</th>
+            <th class="soc-opt">AbuseIPDB (cache)</th>
+          </tr></thead>
+          <tbody id="tb-f2b-events"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</section>
+
 <section class="soc-view" id="view-admin" hidden>
   <header class="soc-head">
     <h1 class="soc-title">Administration</h1>
@@ -1147,7 +1250,7 @@ async function loadLive() {
   try { ov = await getJson('api/overview'); } catch (e) { LIVE.expired = e.status === 401; LIVE.error = e.name === 'AbortError' ? 'waktu habis' : String(e.message || e); return; }
   const me = await getJson('api/me').catch(() => null);
   const perms = (me && me.permissions) || [];
-  const [ioc, geo, al, hl, ad, au, cs] = await Promise.all([
+  const [ioc, geo, al, hl, ad, au, cs, f2] = await Promise.all([
     getJson('api/ioc-lists').catch(() => null),
     getJson('api/geo?hours=24').catch(() => null),
     getJson('api/alerts?days=7&limit=500').catch(() => null),
@@ -1155,6 +1258,7 @@ async function loadLive() {
     perms.includes('users') ? getJson('api/admin').catch(() => null) : null,
     perms.includes('audit') ? getJson('api/audit').catch(() => null) : null,
     getJson('api/cases').catch(() => null),
+    getJson('api/fail2ban').catch(() => null),
   ]);
   LIVE.on = true;
   LIVE.me = me;
@@ -1162,6 +1266,7 @@ async function loadLive() {
   LIVE.metrics = ov.metrics;
   DATA.geo = (geo && geo.sources) || [];
   DATA.ioc = ioc;
+  DATA.f2b = f2;
   DATA.alerts_daily = liveDaily(ov.trend || []);
   DATA.alerts_by_tactic = (ov.mitre || []).map((m) => ({tactic_id: '', tactic: m.name, alerts: m.count}));
   DATA.top_threats = (ov.top_threats || []).map((t) => ({name: t.name, alerts: t.count}));
@@ -2326,8 +2431,115 @@ function drawAdmin() {
   if (!DATA.integrations.length) emptyRow(ti, 3);
 }
 
+// ---- Fail2ban (snapshot dari pembantu root; hanya baca) ----
+function banExpiry(since, bantime) {
+  if (bantime == null) return '—';
+  if (bantime < 0) return 'Permanen';
+  return since ? fmtTime(new Date(new Date(since).getTime() + bantime * 1000).toISOString()) : '—';
+}
+
+function repTd(tr, ip) {
+  const c = td(tr, null, 'soc-mono');
+  const t = repText(REP[ip]);
+  c.textContent = t ? t.text : '—';
+  if (t) { if (t.bad) c.classList.add('soc-bad'); if (t.tip) c.title = t.tip; }
+}
+
+function drawF2b() {
+  const d = DATA.f2b;
+  const status = $('f2b-status');
+  const jails = (d && d.jails) || [];
+  const banned = jails.flatMap((j) => (j.banned || []).map((b) => Object.assign({jail: j.name}, b)));
+  const sum = (k) => jails.reduce((n, j) => n + (j[k] || 0), 0);
+  const ok = !!(d && d.available && d.ok && !d.stale);
+  const badge = $('badge-f2b');
+  badge.textContent = fmtInt(banned.length);
+  badge.hidden = !banned.length;
+
+  if (!d) { $('f2b-lede').textContent = 'Status fail2ban tidak bisa dimuat dari server.'; status.className = 'live-note warn'; status.textContent = ''; }
+  else if (!d.available) { $('f2b-lede').textContent = d.reason || 'Data fail2ban belum tersedia.'; status.className = 'live-note warn'; status.textContent = 'Pasang pembantu snapshot (server/fail2ban) di server untuk mengaktifkan halaman ini.'; }
+  else {
+    $('f2b-lede').innerHTML = d.ok
+      ? '<b>' + fmtInt(jails.length) + '</b> jail aktif, <b>' + fmtInt(banned.length) + '</b> IP sedang diblokir, dan <b>' + fmtInt(sum('total_banned')) + '</b> ban sejak fail2ban berjalan.'
+      : 'Fail2ban tidak menjawab: ' + (d.error || 'alasan tidak diketahui') + '.';
+    status.className = 'live-note ' + (ok ? 'live' : 'warn');
+    status.textContent = d.stale
+      ? 'Data sudah ' + Math.round(d.age_seconds / 60) + ' menit tidak diperbarui; timer snapshot di server mungkin berhenti.'
+      : 'Data diperbarui ' + (d.age_seconds < 90 ? d.age_seconds + ' detik' : Math.round(d.age_seconds / 60) + ' menit') + ' lalu (tiap 30 detik).';
+  }
+
+  $('f2b-t-state').textContent = !d || !d.available ? '—' : !d.ok ? 'Mati' : d.stale ? 'Data basi' : 'Aktif';
+  $('f2b-t-ver').textContent = d && d.version ? 'fail2ban ' + d.version.replace(/^fail2ban\s*/i, '') : 'layanan fail2ban';
+  $('f2b-t-jails').textContent = d && d.ok ? fmtInt(jails.length) : '—';
+  $('f2b-t-banned').textContent = d && d.ok ? fmtInt(banned.length) : '—';
+  $('f2b-t-total').textContent = d && d.ok ? fmtInt(sum('total_banned')) : '—';
+  $('f2b-t-failed').textContent = d && d.ok ? fmtInt(sum('currently_failed')) : '—';
+  $('f2b-t-failed-total').textContent = d && d.ok ? fmtInt(sum('total_failed')) : '—';
+
+  const tj = $('tb-f2b-jails');
+  tj.replaceChildren();
+  jails.forEach((j) => {
+    const tr = el('tr', null, null, tj);
+    td(tr, j.name, 'soc-mono');
+    td(tr, fmtInt(j.currently_failed), 'soc-num');
+    td(tr, fmtInt(j.total_failed), 'soc-num');
+    td(tr, fmtInt(j.currently_banned), 'soc-num');
+    td(tr, fmtInt(j.total_banned), 'soc-num');
+    td(tr, j.maxretry != null ? j.maxretry + ' gagal / ' + (j.findtime != null ? j.findtime + ' dtk' : '?') : '—', 'soc-opt');
+    td(tr, j.bantime == null ? '—' : j.bantime < 0 ? 'Permanen' : fmtDuration(j.bantime), 'soc-opt');
+  });
+  if (!jails.length) emptyRow(tj, 7, d && d.available ? 'Tidak ada jail aktif.' : 'Tidak ada data.');
+
+  const tb = $('tb-f2b-banned');
+  tb.replaceChildren();
+  banned.forEach((b) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, b.ip, 'soc-mono');
+    td(tr, b.jail, 'soc-mono');
+    td(tr, b.since ? fmtTime(b.since) : '—', 'soc-num');
+    td(tr, banExpiry(b.since, b.bantime), 'soc-num soc-opt');
+    td(tr, b.bancount != null ? fmtInt(b.bancount) : '—', 'soc-num soc-opt');
+    repTd(tr, b.ip);
+    const btn = el('button', 'soc-btn', 'Cari', td(tr, null));
+    btn.type = 'button';
+    btn.addEventListener('click', () => { $('ti-q').value = b.ip; try { history.replaceState(null, '', '#intel'); } catch (e) {} showView('intel'); lookup(b.ip); });
+  });
+  if (!banned.length) emptyRow(tb, 7, d && d.ok ? 'Tidak ada IP yang sedang diblokir.' : 'Tidak ada data.');
+
+  const te = $('tb-f2b-events');
+  te.replaceChildren();
+  ((d && d.events) || []).forEach((e) => {
+    const tr = el('tr', null, null, te);
+    td(tr, fmtTime(e.at), 'soc-num');
+    chip(tr, e.action, 'tone-' + (e.action === 'Unban' ? 'ok' : 'bad'));
+    td(tr, e.jail, 'soc-mono');
+    td(tr, e.ip, 'soc-mono');
+    const c = td(tr, null, 'soc-opt soc-mono');
+    const t = repText(REP[e.ip]);
+    c.textContent = t ? t.text : '—';
+    if (t && t.bad) c.classList.add('soc-bad');
+  });
+  if (!((d && d.events) || []).length) emptyRow(te, 5, d && d.available ? 'Belum ada kejadian ban atau unban.' : 'Tidak ada data.');
+}
+
+function fmtDuration(sec) {
+  if (sec >= 86400) return Math.round(sec / 86400) + ' hari';
+  if (sec >= 3600) return Math.round(sec / 3600) + ' jam';
+  if (sec >= 60) return Math.round(sec / 60) + ' menit';
+  return sec + ' detik';
+}
+
+async function refreshF2b() {
+  try { DATA.f2b = await getJson('api/fail2ban'); } catch (e) { return; }
+  drawF2b();
+  const d = DATA.f2b;
+  const ips = d && d.jails ? d.jails.flatMap((j) => (j.banned || []).map((b) => b.ip)) : [];
+  if (ips.length && await loadRep(ips, true)) drawF2b();
+}
+setInterval(() => { if (!$('view-fail2ban').hidden) refreshF2b(); }, 30000);
+
 // ---- Module navigation (#overview, #alerts, #ai, #intel, #incidents, #automation, #siem, #admin) ----
-const VIEWS = ['overview', 'alerts', 'ai', 'intel', 'incidents', 'automation', 'siem', 'admin'];
+const VIEWS = ['overview', 'alerts', 'ai', 'intel', 'incidents', 'automation', 'siem', 'fail2ban', 'admin'];
 
 // Charts measure their box, so only draw the ones on the visible module.
 function drawCharts() {
@@ -2339,6 +2551,7 @@ window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer
 function showView(want) {
   const h = typeof want === 'string' ? want : location.hash.slice(1);
   const v = VIEWS.includes(h) && (h !== 'admin' || canManageUsers()) ? h : 'overview';
+  if (v === 'fail2ban') refreshF2b();
   VIEWS.forEach((k) => { $('view-' + k).hidden = k !== v; });
   document.querySelectorAll('.side-link').forEach((a) => {
     if (a.dataset.view === v) a.setAttribute('aria-current', 'page');
@@ -2359,7 +2572,7 @@ document.querySelectorAll('.side-link').forEach((a) => a.addEventListener('click
 // Jawaban disusun dari data Wazuh yang sudah dimuat dashboard. Untuk memakai model sungguhan, buat
 // askAssistant() memanggil backend dan kembalikan format blok yang sama:
 // {p: teks} paragraf, {ul: [teks]} daftar, {go: [{view, label?, then?}]} tombol yang membuka modul.
-const VIEW_NAME = {overview: 'SOC Overview', alerts: 'Alert Management', ai: 'AI Investigation', intel: 'Threat Intelligence', incidents: 'Incident Management', automation: 'Automation Center', siem: 'SIEM Health', admin: 'Administration'};
+const VIEW_NAME = {overview: 'SOC Overview', alerts: 'Alert Management', ai: 'AI Investigation', intel: 'Threat Intelligence', incidents: 'Incident Management', automation: 'Automation Center', siem: 'SIEM Health', fail2ban: 'Fail2ban', admin: 'Administration'};
 const has = (q, ...words) => words.some((w) => q.includes(w));
 const currentView = () => VIEWS.find((k) => !$('view-' + k).hidden) || 'overview';
 const openAlerts = () => DATA.alerts.filter((a) => !isClosed(a.status));
@@ -2683,6 +2896,8 @@ drawIntel();
 drawCases();
 drawAutomation();
 drawSiem();
+drawF2b();
+refreshF2b();
 drawAdmin();
 drawAudit();
 showView();
