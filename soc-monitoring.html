@@ -410,6 +410,10 @@ body::after {
     Fail2ban
     <span class="side-badge warn" id="badge-f2b" title="IP yang sedang diblokir fail2ban" hidden>—</span>
   </a>
+  <a class="side-link" href="#suricata" data-view="suricata">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+    Suricata (IDS)
+  </a>
   <a class="side-link" href="#admin" data-view="admin">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
     Administration
@@ -1104,6 +1108,88 @@ body::after {
           <tbody id="tb-f2b-events"></tbody>
         </table>
       </div>
+    </section>
+  </div>
+</section>
+
+<section class="soc-view" id="view-suricata" hidden>
+  <header class="soc-head">
+    <h1 class="soc-title">Suricata (IDS)</h1>
+    <p class="soc-lede" id="su-lede">Memuat alert Suricata…</p>
+    <p class="live-note" id="su-status"></p>
+  </header>
+
+  <div class="soc-tiles">
+    <div class="soc-tile"><span class="soc-tile-label">Alert</span><span class="soc-tile-value" id="su-t-total">—</span><span class="soc-tile-sub" id="su-t-range">periode terpilih</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">IP sumber unik</span><span class="soc-tile-value" id="su-t-src">—</span><span class="soc-tile-sub">pengirim berbeda</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">Severity tinggi</span><span class="soc-tile-value" id="su-t-high">—</span><span class="soc-tile-sub">Suricata severity 1</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">Severity sedang</span><span class="soc-tile-value" id="su-t-med">—</span><span class="soc-tile-sub">Suricata severity 2</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">Disembunyikan</span><span class="soc-tile-value" id="su-t-hidden">—</span><span class="soc-tile-sub" id="su-t-hidden-sub">tidak dihitung di atas</span></div>
+  </div>
+
+  <section class="soc-card soc-wide" aria-label="Filter Suricata">
+    <div class="soc-toolbar" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+      <input id="su-q" class="soc-search" type="search" placeholder="Cari signature, SID, IP, port…" aria-label="Cari alert Suricata">
+      <select id="su-range" class="soc-select" aria-label="Rentang waktu">
+        <option value="1">24 jam terakhir</option><option value="7">7 hari</option><option value="30">30 hari</option>
+      </select>
+      <select id="su-internal" class="soc-select" aria-label="Lalu lintas dari server sendiri">
+        <option value="hide">Sembunyikan lalu lintas dari server sendiri</option><option value="show">Tampilkan semuanya</option>
+      </select>
+      <select id="su-info" class="soc-select" aria-label="Severity rendah">
+        <option value="show">Semua severity</option><option value="hide">Sembunyikan severity rendah</option>
+      </select>
+    </div>
+    <p class="soc-card-note" id="su-filter-note"></p>
+  </section>
+
+  <div class="soc-grid">
+    <section class="soc-card soc-wide">
+      <h2>Tren alert</h2>
+      <p class="soc-card-note" id="su-chart-note"></p>
+      <div id="su-chart" role="img" aria-label="Grafik jumlah alert Suricata per waktu"></div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Signature teratas</h2>
+      <div class="soc-tablewrap"><table class="soc-table">
+        <thead><tr><th>Signature</th><th>Kategori</th><th>Severity</th><th class="soc-num">Alert</th><th class="soc-num soc-opt">IP sumber</th><th></th></tr></thead>
+        <tbody id="tb-su-sig"></tbody>
+      </table></div>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>IP sumber teratas</h2>
+      <p class="soc-card-note">Skor AbuseIPDB diambil otomatis (cache 24 jam); skor 50 ke atas ditandai merah.</p>
+      <div class="soc-tablewrap"><table class="soc-table">
+        <thead><tr><th>IP sumber · AbuseIPDB</th><th class="soc-opt">Signature terbanyak</th><th class="soc-num">Alert</th><th></th></tr></thead>
+        <tbody id="tb-su-src"></tbody>
+      </table></div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Kategori</h2>
+      <div class="soc-tablewrap"><table class="soc-table"><thead><tr><th>Kategori</th><th class="soc-num">Alert</th></tr></thead><tbody id="tb-su-cat"></tbody></table></div>
+    </section>
+
+    <section class="soc-card">
+      <h2>Port tujuan dan protokol</h2>
+      <div class="soc-tablewrap"><table class="soc-table"><thead><tr><th>Port</th><th class="soc-num">Alert</th></tr></thead><tbody id="tb-su-port"></tbody></table></div>
+      <p class="soc-card-note" id="su-proto"></p>
+    </section>
+
+    <section class="soc-card soc-wide">
+      <h2>Alert terbaru</h2>
+      <div class="soc-tablewrap"><table class="soc-table">
+        <thead><tr><th class="soc-num">Waktu</th><th>Signature</th><th>Severity</th><th>Sumber</th><th>Tujuan</th><th class="soc-opt">Protokol</th><th></th></tr></thead>
+        <tbody id="tb-su-alerts"></tbody>
+      </table></div>
+      <div class="soc-pager" style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
+        <button class="soc-btn" id="su-prev" type="button">Sebelumnya</button>
+        <span class="soc-card-note" id="su-page"></span>
+        <button class="soc-btn" id="su-next" type="button">Berikutnya</button>
+      </div>
+      <p class="soc-card-note">Klik "Buka" untuk membuka alert yang sama di Alert Management (triage, analisis AI, dan penggabungan ke kasus).</p>
     </section>
   </div>
 </section>
@@ -3071,8 +3157,134 @@ async function refreshF2b() {
 }
 setInterval(() => { if (!$('view-fail2ban').hidden) refreshF2b(); }, 30000);
 
+// ---- Suricata (IDS): data dari alert Wazuh (rule group suricata) lewat api/suricata ----
+const SU = {data: null, page: 0, seq: 0, error: ''};
+const SU_SEV = {'1': ['Tinggi', 'chip-high'], '2': ['Sedang', 'chip-medium'], '3': ['Rendah', 'chip-low']};
+const suSize = 25;
+
+function suChart(box, tl, interval) {
+  box.replaceChildren();
+  if (!tl || !tl.length) { el('p', 'soc-card-note', 'Belum ada data.', box); return; }
+  const W = 720, H = 150, pad = 22, max = Math.max(1, ...tl.map((b) => b.count));
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('width', '100%'); svg.setAttribute('role', 'presentation');
+  const bw = Math.min(28, (W - 2 * pad) / tl.length);
+  tl.forEach((b, i) => {
+    const h = Math.max(b.count ? 2 : 0, (H - 2 * pad) * b.count / max);
+    const r = document.createElementNS(ns, 'rect');
+    r.setAttribute('x', pad + i * bw + 1); r.setAttribute('width', Math.max(1, bw - 2));
+    r.setAttribute('y', H - pad - h); r.setAttribute('height', h); r.setAttribute('fill', 'var(--accent)');
+    const t = document.createElementNS(ns, 'title'); t.textContent = fmtTime(b.t) + ': ' + fmtInt(b.count) + ' alert';
+    r.appendChild(t); svg.appendChild(r);
+  });
+  const label = (x, y, anchor, text) => {
+    const tx = document.createElementNS(ns, 'text');
+    tx.setAttribute('x', x); tx.setAttribute('y', y); tx.setAttribute('font-size', '10'); tx.setAttribute('fill', 'var(--muted)'); tx.setAttribute('text-anchor', anchor);
+    tx.textContent = text; svg.appendChild(tx);
+  };
+  label(pad, H - 5, 'start', fmtTime(tl[0].t)); label(Math.min(W - pad, pad + tl.length * bw), H - 5, 'end', fmtTime(tl[tl.length - 1].t));
+  label(pad, 12, 'start', 'maks ' + fmtInt(max) + ' per ' + (interval === '1h' ? 'jam' : 'hari'));
+  box.appendChild(svg);
+}
+
+function suOpen(id) {
+  $('am-search').value = id; try { history.replaceState(null, '', '#alerts'); } catch (e) {}
+  showView('alerts'); $('am-search').dispatchEvent(new Event('input'));
+}
+function suSearch(v) { $('su-q').value = v; SU.page = 0; refreshSuri(); }
+
+function drawSuri() {
+  const d = SU.data, st = $('su-status');
+  if (!d) {
+    $('su-lede').textContent = SU.error || 'Memuat alert Suricata…';
+    st.className = 'live-note warn'; st.textContent = ''; return;
+  }
+  const sev = (k) => (d.severity.find((x) => x.key === k) || {count: 0}).count;
+  const rangeTxt = d.days === 1 ? '24 jam terakhir' : d.days + ' hari terakhir';
+  $('su-lede').innerHTML = '<b>' + fmtInt(d.total) + '</b> alert Suricata dalam ' + rangeTxt + ' dari <b>' + fmtInt(d.unique_src) + '</b> IP sumber'
+    + (d.hidden ? ', <b>' + fmtInt(d.hidden) + '</b> lainnya disembunyikan.' : '.');
+  st.className = 'live-note live'; st.textContent = 'Diperbarui otomatis tiap 30 detik. Sumber: alert Wazuh dengan rule group "suricata".';
+  $('su-t-total').textContent = fmtInt(d.total); $('su-t-range').textContent = rangeTxt;
+  $('su-t-src').textContent = fmtInt(d.unique_src);
+  $('su-t-high').textContent = fmtInt(sev('1')); $('su-t-med').textContent = fmtInt(sev('2'));
+  $('su-t-hidden').textContent = fmtInt(d.hidden);
+  $('su-t-hidden-sub').textContent = d.hidden ? 'derau yang disaring' : 'tidak ada yang disaring';
+  $('su-filter-note').textContent = $('su-internal').value === 'hide'
+    ? 'Alert yang bersumber dari server sendiri (' + d.local_ips.join(', ') + ') disembunyikan; biasanya lalu lintas keluar seperti metadata cloud, bukan serangan.' : '';
+  $('su-chart-note').textContent = 'Jumlah alert per ' + (d.interval === '1h' ? 'jam' : 'hari') + ', waktu WIB.';
+  suChart($('su-chart'), d.timeline, d.interval);
+
+  const sg = $('tb-su-sig'); sg.replaceChildren();
+  d.signatures.forEach((x) => {
+    const tr = el('tr', null, null, sg);
+    const c = td(tr, x.key); el('div', 'soc-card-note', 'SID ' + x.sid, c);
+    td(tr, x.cat);
+    const sv = SU_SEV[x.sev] || [x.sev, 'chip-low']; chip(tr, sv[0], sv[1]);
+    td(tr, fmtInt(x.count), 'soc-num'); td(tr, fmtInt(x.srcs), 'soc-num soc-opt');
+    const a = td(tr, null); const b = el('button', 'soc-btn', 'Cari', a); b.type = 'button'; b.addEventListener('click', () => suSearch(x.sid));
+  });
+  if (!d.signatures.length) emptyRow(sg, 6, 'Tidak ada alert pada filter ini.');
+
+  const sr = $('tb-su-src'); sr.replaceChildren();
+  d.sources.forEach((x) => {
+    const tr = el('tr', null, null, sr);
+    const c = td(tr, null, 'soc-mono'); repCell(c, x.key);
+    td(tr, x.sig, 'soc-opt'); td(tr, fmtInt(x.count), 'soc-num');
+    const a = td(tr, null);
+    const b = el('button', 'soc-btn', 'Cari', a); b.type = 'button'; b.addEventListener('click', () => suSearch(x.key));
+    const i = el('button', 'soc-btn', 'Intel', a); i.type = 'button';
+    i.addEventListener('click', () => { $('ti-q').value = x.key; try { history.replaceState(null, '', '#intel'); } catch (e) {} showView('intel'); lookup(x.key); });
+  });
+  if (!d.sources.length) emptyRow(sr, 4, 'Tidak ada IP sumber.');
+
+  const ct = $('tb-su-cat'); ct.replaceChildren();
+  d.categories.forEach((x) => { const tr = el('tr', null, null, ct); td(tr, x.key); td(tr, fmtInt(x.count), 'soc-num'); });
+  if (!d.categories.length) emptyRow(ct, 2, '—');
+  const pt = $('tb-su-port'); pt.replaceChildren();
+  d.ports.forEach((x) => { const tr = el('tr', null, null, pt); td(tr, x.key === '0' ? '0 (ICMP / tanpa port)' : x.key, 'soc-mono'); td(tr, fmtInt(x.count), 'soc-num'); });
+  if (!d.ports.length) emptyRow(pt, 2, '—');
+  $('su-proto').textContent = d.protocols.length ? 'Protokol: ' + d.protocols.map((x) => x.key + ' ' + fmtInt(x.count)).join(' · ') : '';
+
+  const ab = $('tb-su-alerts'); ab.replaceChildren();
+  d.alerts.forEach((x) => {
+    const tr = el('tr', null, null, ab);
+    td(tr, fmtTime(x.timestamp), 'soc-num');
+    const c = td(tr, x.signature); el('div', 'soc-card-note', x.category + ' · SID ' + x.sid + (x.action && x.action !== 'allowed' ? ' · ' + x.action : ''), c);
+    const sv = SU_SEV[x.severity] || [x.severity || '—', 'chip-low']; chip(tr, sv[0], sv[1]);
+    const s1 = td(tr, null, 'soc-mono'); repCell(s1, x.src); if (x.src_port && x.src_port !== '0') el('span', 'soc-card-note', ':' + x.src_port, s1);
+    td(tr, x.dest + (x.dest_port && x.dest_port !== '0' ? ':' + x.dest_port : ''), 'soc-mono');
+    td(tr, [x.proto, x.app_proto].filter(Boolean).join(' / '), 'soc-opt');
+    const a = td(tr, null); const b = el('button', 'soc-btn', 'Buka', a); b.type = 'button'; b.addEventListener('click', () => suOpen(x.id));
+  });
+  if (!d.alerts.length) emptyRow(ab, 7, 'Tidak ada alert pada filter ini.');
+  const pages = Math.max(1, Math.ceil(Math.min(d.total, 10000) / suSize));
+  $('su-page').textContent = 'Halaman ' + (SU.page + 1) + ' dari ' + fmtInt(pages);
+  $('su-prev').disabled = SU.page <= 0; $('su-next').disabled = d.offset + suSize >= Math.min(d.total, 10000);
+}
+
+async function refreshSuri() {
+  const seq = ++SU.seq;
+  const p = new URLSearchParams({days: $('su-range').value, internal: $('su-internal').value, info: $('su-info').value, q: $('su-q').value.trim(), limit: suSize, offset: SU.page * suSize});
+  let d;
+  try { d = await getJson('api/suricata?' + p); } catch (e) { if (seq === SU.seq) { SU.data = null; SU.error = 'Data Suricata tidak bisa dimuat: ' + (e.message || 'galat'); drawSuri(); } return; }
+  if (seq !== SU.seq) return;
+  SU.data = d; SU.error = '';
+  drawSuri();
+  const ips = [...d.sources.map((x) => x.key), ...d.alerts.map((x) => x.src)];
+  const a = await loadRep(d.sources.map((x) => x.key), true);
+  const b = await loadRep(ips, false);
+  if ((a || b) && seq === SU.seq) drawSuri();
+}
+let suTimer;
+$('su-q').addEventListener('input', () => { clearTimeout(suTimer); suTimer = setTimeout(() => { SU.page = 0; refreshSuri(); }, 350); });
+['su-range', 'su-internal', 'su-info'].forEach((id) => $(id).addEventListener('change', () => { SU.page = 0; refreshSuri(); }));
+$('su-prev').addEventListener('click', () => { SU.page = Math.max(0, SU.page - 1); refreshSuri(); });
+$('su-next').addEventListener('click', () => { SU.page += 1; refreshSuri(); });
+setInterval(() => { if (!$('view-suricata').hidden && document.activeElement !== $('su-q')) refreshSuri(); }, 30000);
+
 // ---- Module navigation (#overview, #alerts, #ai, #intel, #incidents, #automation, #siem, #admin) ----
-const VIEWS = ['overview', 'alerts', 'ai', 'intel', 'incidents', 'automation', 'siem', 'fail2ban', 'admin'];
+const VIEWS = ['overview', 'alerts', 'ai', 'intel', 'incidents', 'automation', 'siem', 'fail2ban', 'suricata', 'admin'];
 
 // Charts measure their box, so only draw the ones on the visible module.
 function drawCharts() {
@@ -3085,6 +3297,7 @@ function showView(want) {
   const h = typeof want === 'string' ? want : location.hash.slice(1);
   const v = VIEWS.includes(h) && (h !== 'admin' || canManageUsers()) ? h : 'overview';
   if (v === 'fail2ban') refreshF2b();
+  if (v === 'suricata') refreshSuri();
   if (v === 'admin') refreshAiUsage();
   if (v === 'automation') refreshPlaybook();
   VIEWS.forEach((k) => { $('view-' + k).hidden = k !== v; });
@@ -3107,7 +3320,7 @@ document.querySelectorAll('.side-link').forEach((a) => a.addEventListener('click
 // Jawaban disusun dari data Wazuh yang sudah dimuat dashboard. Untuk memakai model sungguhan, buat
 // askAssistant() memanggil backend dan kembalikan format blok yang sama:
 // {p: teks} paragraf, {ul: [teks]} daftar, {go: [{view, label?, then?}]} tombol yang membuka modul.
-const VIEW_NAME = {overview: 'SOC Overview', alerts: 'Alert Management', ai: 'AI Investigation', intel: 'Threat Intelligence', incidents: 'Incident Management', automation: 'Automation Center', siem: 'SIEM Health', fail2ban: 'Fail2ban', admin: 'Administration'};
+const VIEW_NAME = {overview: 'SOC Overview', alerts: 'Alert Management', ai: 'AI Investigation', intel: 'Threat Intelligence', incidents: 'Incident Management', automation: 'Automation Center', siem: 'SIEM Health', fail2ban: 'Fail2ban', suricata: 'Suricata (IDS)', admin: 'Administration'};
 const has = (q, ...words) => words.some((w) => q.includes(w));
 const currentView = () => VIEWS.find((k) => !$('view-' + k).hidden) || 'overview';
 const openAlerts = () => DATA.alerts.filter((a) => !isClosed(a.status));

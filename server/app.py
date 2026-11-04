@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import secrets
+import socket
 import sqlite3
 import ssl
 import subprocess
@@ -227,6 +228,68 @@ def severity_name(level):
 def source_alert(hit):
     s=hit.get("_source",{});r=s.get("rule",{});a=s.get("agent",{});d=s.get("data",{})
     return {"id":hit.get("_id",""),"timestamp":s.get("timestamp",""),"agent":a.get("name","unknown"),"agent_id":a.get("id",""),"rule_id":str(r.get("id","")),"level":int(r.get("level",0)),"severity":severity_name(int(r.get("level",0))),"description":r.get("description",""),"groups":r.get("groups",[]),"mitre":r.get("mitre",{}),"srcip":d.get("srcip",d.get("src_ip","")),"url":d.get("url",""),"hash":d.get("sha256_after",d.get("md5_after","")),"triage":{"status":"New","assignee":"","note":""}}
+
+SURI_SEV={"1":"Tinggi","2":"Sedang","3":"Rendah"}
+
+def local_ips():
+    """Alamat server sendiri; alert Suricata yang bersumber dari sini adalah lalu lintas keluar (mis. metadata cloud), bukan serangan."""
+    ips={"127.0.0.1"}|{i.strip() for i in os.environ.get("SOC_LOCAL_IPS","").split(",") if i.strip()}
+    try:
+        with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as sk:
+            sk.connect(("192.0.2.1",9));ips.add(sk.getsockname()[0])
+    except OSError:pass
+    return sorted(ips)
+
+def suri_buckets(agg,sub=None):
+    out=[]
+    for b in agg.get("buckets",[]):
+        row={"key":str(b["key"]),"count":int(b["doc_count"])}
+        for name in sub or ():
+            sb=(b.get(name) or {}).get("buckets")
+            if sb is not None:row[name]=str(sb[0]["key"]) if sb else ""
+            elif name in b and "value" in b[name]:row[name]=int(b[name]["value"] or 0)
+        out.append(row)
+    return out
+
+def suricata_data(days=1,hide_internal=True,hide_info=False,q="",limit=50,offset=0):
+    """Ringkasan dan daftar alert Suricata (rule group suricata) dari indeks Wazuh. Hanya baca."""
+    days=max(1,min(int(days),30));limit=max(1,min(int(limit),100));offset=max(0,min(int(offset),ES_WINDOW-limit))
+    filters=[range_filter("timestamp",f"now-{days}d"),{"term":{"rule.groups":"suricata"}}]
+    mine=local_ips();must_not=[]
+    if hide_internal:must_not.append({"terms":{"data.src_ip":mine}})
+    if hide_info:must_not.append({"term":{"data.alert.severity":"3"}})
+    q=q.strip()[:120]
+    if q:
+        esc="".join(chr(92)+c if c in "*?"+chr(92) else c for c in q)
+        filters.append({"bool":{"should":[{"wildcard":{"data.alert.signature":{"value":"*"+esc+"*","case_insensitive":True}}},{"term":{"data.src_ip":q}},{"term":{"data.dest_ip":q}},{"term":{"data.alert.signature_id":q}},{"term":{"data.dest_port":q}}],"minimum_should_match":1}})
+    query=bool_filters(filters)
+    if must_not:query["bool"]["must_not"]=must_not
+    interval="1h" if days<=2 else "1d"
+    one=lambda f:{"terms":{"field":f,"size":1}}
+    body={"size":limit,"from":offset,"track_total_hits":True,"query":query,"sort":[{"timestamp":{"order":"desc"}}],
+      "_source":["timestamp","rule.level","data.src_ip","data.dest_ip","data.src_port","data.dest_port","data.proto","data.app_proto","data.alert.signature","data.alert.signature_id","data.alert.category","data.alert.severity","data.alert.action","data.community_id","data.direction"],
+      "aggs":{"sig":{"terms":{"field":"data.alert.signature","size":10},"aggs":{"sid":one("data.alert.signature_id"),"sev":one("data.alert.severity"),"cat":one("data.alert.category"),"srcs":{"cardinality":{"field":"data.src_ip"}}}},
+        "cat":{"terms":{"field":"data.alert.category","size":8}},
+        "src":{"terms":{"field":"data.src_ip","size":10},"aggs":{"sig":one("data.alert.signature"),"sev":{"min":{"field":"rule.level"}}}},
+        "dport":{"terms":{"field":"data.dest_port","size":8}},"proto":{"terms":{"field":"data.proto","size":5}},
+        "sev":{"terms":{"field":"data.alert.severity","size":3}},"srcs":{"cardinality":{"field":"data.src_ip"}},
+        "hist":{"date_histogram":{"field":"timestamp","fixed_interval":interval,"min_doc_count":0}}}}
+    res=es_search("wazuh-alerts-*",body);ag=res.get("aggregations",{})
+    hidden=0
+    if hide_internal or hide_info:
+        shown=bool_filters(filters)
+        hc=es_search("wazuh-alerts-*",{"size":0,"track_total_hits":True,"query":shown})
+        hidden=max(0,int(hc["hits"]["total"]["value"])-int(res["hits"]["total"]["value"]))
+    alerts=[]
+    for h in res.get("hits",{}).get("hits",[]):
+        sr=h.get("_source",{});d=sr.get("data",{});a=d.get("alert",{})
+        alerts.append({"id":h.get("_id",""),"timestamp":sr.get("timestamp",""),"level":int(sr.get("rule",{}).get("level",0)),"signature":a.get("signature",""),"sid":str(a.get("signature_id","")),"category":a.get("category",""),"severity":str(a.get("severity","")),"action":a.get("action",""),"src":d.get("src_ip",""),"src_port":str(d.get("src_port","")),"dest":d.get("dest_ip",""),"dest_port":str(d.get("dest_port","")),"proto":d.get("proto",""),"app_proto":d.get("app_proto",""),"direction":d.get("direction",""),"community_id":d.get("community_id","")})
+    hist=[{"t":datetime.fromtimestamp(b["key"]/1000,timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),"count":int(b["doc_count"])} for b in ag.get("hist",{}).get("buckets",[])]
+    return {"total":int(res["hits"]["total"]["value"]),"offset":offset,"limit":limit,"days":days,"interval":interval,"hidden":hidden,"local_ips":mine,
+      "unique_src":int(ag.get("srcs",{}).get("value",0)),"severity":suri_buckets(ag.get("sev",{})),
+      "signatures":suri_buckets(ag.get("sig",{}),("sid","sev","cat","srcs")),"categories":suri_buckets(ag.get("cat",{})),
+      "sources":suri_buckets(ag.get("src",{}),("sig",)),"ports":suri_buckets(ag.get("dport",{})),"protocols":suri_buckets(ag.get("proto",{})),
+      "timeline":hist,"alerts":alerts}
 
 ES_WINDOW=10000
 CLOSED_STATES=("Closed","False positive")
@@ -1091,6 +1154,12 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self,200,{"total":total,"offset":offset,"limit":limit,"window":ES_WINDOW,"alerts":docs})
             except ValueError:json_response(self,400,{"error":"Parameter tidak valid"})
             except Exception as exc:logging.exception("alerts failed: %s",type(exc).__name__);json_response(self,503,{"error":"Alert query unavailable"})
+            return
+        if path=="/api/suricata":
+            try:
+                json_response(self,200,suricata_data(int(qs.get('days',['1'])[0]),qs.get('internal',['hide'])[0]!='show',qs.get('info',['show'])[0]=='hide',qs.get('q',[''])[0],int(qs.get('limit',['50'])[0]),int(qs.get('offset',['0'])[0])))
+            except ValueError:json_response(self,400,{"error":"Parameter tidak valid"})
+            except Exception as exc:logging.exception("suricata failed: %s",type(exc).__name__);json_response(self,503,{"error":"Data Suricata tidak tersedia"})
             return
         if path=="/api/fail2ban":json_response(self,200,fail2ban_data());return
         if path=="/api/playbook":
