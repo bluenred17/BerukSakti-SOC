@@ -897,8 +897,6 @@ body::after {
         <div class="soc-tile"><span class="soc-tile-label">Simulasi, 24 jam</span><span class="soc-tile-value" id="pb-t-dry">—</span><span class="soc-tile-sub">IP yang akan diblokir</span></div>
         <div class="soc-tile"><span class="soc-tile-label">Pembantu root</span><span class="soc-tile-value" id="pb-t-helper" style="font-size:1.2rem">—</span><span class="soc-tile-sub" id="pb-t-helper-sub"></span></div>
       </div>
-      <p class="soc-card-note" id="pb-rep-note"></p>
-      <p class="soc-card-note" id="pb-safety"></p>
       <div id="pb-form" hidden>
         <h3 class="detail-h">Pengaturan (administrator)</h3>
         <div class="soc-tools">
@@ -3322,9 +3320,6 @@ function drawPlaybook() {
   const c = d.config;
   $('pb-rule').textContent = 'Aturan: IP publik yang bukan di daftar putih dan memicu minimal ' + c.min_alerts + ' alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' dalam ' + c.window_min + ' menit di agen ' + (c.agents.length ? c.agents.join(', ') : 'mana pun')
     + (c.suricata ? ', atau minimal ' + c.suricata_min_alerts + ' alert Suricata yang masuk ke server' : '') + (c.min_abuse_score ? ' dan berskor AbuseIPDB minimal ' + c.min_abuse_score : '') + ' dicatat sesuai mode. Pemblokiran dijalankan di jail fail2ban "' + d.jail + '" (UFW, semua port).';
-  $('pb-rep-note').textContent = 'Aturan reputasi AbuseIPDB (' + (PB_MODE[c.rep_mode] || c.rep_mode) + '): IP publik yang muncul sebagai sumber alert level ' + c.rep_min_level + '+ di semua agen (yang sama dengan Alert Management; Wazuh, atau Suricata yang masuk ke server) dalam ' + c.rep_window_min + ' menit terakhir dan berskor AbuseIPDB ' + c.rep_min_score + '/100 ke atas'
-    + (c.rep_mode === 'auto' ? ' diblokir otomatis tanpa persetujuan.' : c.rep_mode === 'approval' ? ' diusulkan untuk disetujui.' : c.rep_mode === 'dry-run' ? ' hanya dicatat sebagai simulasi.' : ' tidak dievaluasi.')
-    + (d.abuse_enabled === false ? ' AbuseIPDB belum diaktifkan di server, jadi aturan ini tidak berjalan.' : '');
   const fd = d.feed || {enabled: false, hosts: []};
   $('pbf-note').textContent = fd.enabled
     ? 'Server lain (mis. webserver) menarik daftar ban aktif dari dashboard tiap 15 detik lewat agen soc-ban-agent dan menerapkannya ke jail fail2ban miliknya. Dashboard tidak pernah masuk ke server itu; agen memeriksa ulang IP publik, daftar putih, dan batas di sisinya.'
@@ -3365,8 +3360,6 @@ function drawPlaybook() {
   $('pb-t-dry').textContent = fmtInt(d.counts_24h['dry-run'] || 0);
   $('pb-t-helper').textContent = d.helper_alive ? 'Aktif' : 'Mati';
   $('pb-t-helper-sub').textContent = d.helper_alive ? 'soc-ban-helper berjalan' : 'ban tidak bisa dijalankan';
-  $('pb-safety').textContent = 'Pengaman (dipaksakan oleh pembantu root, bukan dashboard): hanya IP publik; daftar putih ' + (d.policy.readable ? d.policy.allowlist.join(', ') || '(kosong)' : '(kebijakan tidak terbaca)')
-    + ' dan alamat server ini tidak pernah diblokir; maksimal ' + d.policy.max_bans_per_hour + ' ban per jam dan ' + d.policy.max_active_bans + ' ban aktif; ban sementara ' + d.ban_hours + ' jam, lalu kedaluwarsa otomatis. Ban aktif juga tampil di halaman Fail2ban.';
 
   const canCfg = hasPerm('integrations');
   $('pb-form').hidden = !canCfg;
