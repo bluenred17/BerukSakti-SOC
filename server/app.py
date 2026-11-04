@@ -584,6 +584,16 @@ def init_db():
         """)
         if "cats" not in [r[1] for r in con.execute("PRAGMA table_info(playbook_actions)")]:
             con.execute("ALTER TABLE playbook_actions ADD COLUMN cats TEXT NOT NULL DEFAULT '[]'")
+        con.execute("CREATE INDEX IF NOT EXISTS audit_login ON audit(action,target,id)")
+
+def last_logins():
+    """Login terakhir per pengguna, dibaca dari audit log (baris 'login' berisi IP); berlaku juga untuk login sebelum fitur ini ada."""
+    try:
+        with db() as con:
+            rows=con.execute("SELECT target,at,details FROM audit WHERE id IN (SELECT max(id) FROM audit WHERE action='login' GROUP BY target)").fetchall()
+        return {r[0]:{"at":r[1],"ip":r[2]} for r in rows}
+    except Exception as exc:
+        logging.warning("last logins: %s",type(exc).__name__);return {}
 
 def audit(action,target,details='',actor='system'):
     try:
@@ -1196,6 +1206,13 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     detail="%s -> %s"%(cur["id"] if cur else str(users[name].get("role","")),role["id"])
                     users[name]["role"]=role["id"];users[name]["role_changed_at"]=now_iso();users[name]["role_changed_by"]=sess["user"]
+            elif action=="password":
+                pw=str(body.get("password",""))
+                if name not in users or not isinstance(users[name],dict):err=(404,"Pengguna tidak ditemukan.")
+                elif name==sess["user"]:err=(400,"Reset kata sandi akun sendiri tidak tersedia di sini; minta administrator lain.")
+                elif len(pw)<MIN_PW or len(pw)>256:err=(400,"Kata sandi harus %d sampai 256 karakter."%MIN_PW)
+                else:
+                    users[name]["hash"]=hash_password(pw);users[name]["password_changed_at"]=now_iso();users[name]["password_changed_by"]=sess["user"]
             elif action in ("delete","disable","enable"):
                 if name not in users:err=(404,"Pengguna tidak ditemukan.")
                 elif name==sess["user"] and action!="enable":err=(400,"Anda tidak bisa menghapus atau menonaktifkan akun sendiri.")
@@ -1208,8 +1225,9 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as exc:
                     logging.exception("save users failed: %s",type(exc).__name__);err=(503,"Tidak bisa menyimpan daftar pengguna.")
         if err:json_response(self,err[0],{"error":err[1]});return
-        if action in ("delete","disable"):revoke_sessions(name)
-        audit("pengguna: "+{"add":"tambah","delete":"hapus","disable":"nonaktifkan","enable":"aktifkan","role":"ubah peran"}[action],name,detail,actor=sess["user"])
+        if action in ("delete","disable","password"):revoke_sessions(name)
+        if action=="password":clear_fails("user:"+name)
+        audit("pengguna: "+{"add":"tambah","delete":"hapus","disable":"nonaktifkan","enable":"aktifkan","role":"ubah peran","password":"reset kata sandi"}[action],name,detail,actor=sess["user"])
         json_response(self,200,{"ok":True})
     def cookie_header(self,token,max_age):
         attrs=[f"{COOKIE_NAME}={token}",f"Path={COOKIE_PATH}","HttpOnly","SameSite=Lax",f"Max-Age={max_age}"]
@@ -1349,7 +1367,8 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/admin":
             if not can(sess,"users"):json_response(self,403,{"error":"Halaman Administration hanya untuk administrator"});return
             try:
-                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(role_info(u.get("role","readonly")) or {"id":"?","name":"Tidak dikenal"})["id"],"disabled":bool(u.get("disabled")),"created_at":u.get("created_at","")} for n,u in sorted(load_users().items()) if isinstance(u,dict)] if can(sess,"users") else []),"rbac":{"permissions":[{"id":i,"name":nm,"active":a} for i,nm,a in PERMISSIONS],"roles":[{"id":r,"name":nm,"grants":g} for r,nm,g in ROLE_DEFS]}})
+                ll=last_logins()
+                json_response(self,200,{"source":"Wazuh Indexer read-only (kibanaserver)","manager_config":MANAGER_CONFIG,"indexer_url":"https://127.0.0.1:9200 (loopback)","web_auth":"Login aplikasi (sesi cookie; kata sandi di-hash scrypt)","external_integrations":"Not configured in this app","users":([{"name":n,"role":(role_info(u.get("role","readonly")) or {"id":"?","name":"Tidak dikenal"})["id"],"disabled":bool(u.get("disabled")),"created_at":u.get("created_at",""),"last_login_at":(ll.get(n) or {}).get("at",""),"last_login_ip":(ll.get(n) or {}).get("ip","")} for n,u in sorted(load_users().items()) if isinstance(u,dict)] if can(sess,"users") else []),"rbac":{"permissions":[{"id":i,"name":nm,"active":a} for i,nm,a in PERMISSIONS],"roles":[{"id":r,"name":nm,"grants":g} for r,nm,g in ROLE_DEFS]}})
             except Exception as exc:json_response(self,500,{"error":"Could not load admin information"})
             return
         if path=="/api/audit":

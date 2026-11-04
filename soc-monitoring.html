@@ -1336,6 +1336,14 @@ body::after {
         <input id="uf-pw2" class="soc-search" type="password" placeholder="Ulangi kata sandi" autocomplete="new-password" required minlength="12" aria-label="Ulangi kata sandi">
         <button class="soc-btn primary" type="submit">Tambah pengguna</button>
       </form>
+      <form id="pw-form" class="soc-tools" hidden>
+        <span class="soc-card-note">Reset kata sandi untuk <b id="pw-target" class="soc-mono"></b>:</span>
+        <input id="pw-new" class="soc-search" type="password" placeholder="Kata sandi baru (min. 12 karakter)" autocomplete="new-password" required minlength="12" aria-label="Kata sandi baru">
+        <input id="pw-new2" class="soc-search" type="password" placeholder="Ulangi kata sandi baru" autocomplete="new-password" required minlength="12" aria-label="Ulangi kata sandi baru">
+        <button class="soc-btn" type="button" id="pw-gen">Buat acak</button>
+        <button class="soc-btn primary" type="submit">Reset kata sandi</button>
+        <button class="soc-btn" type="button" id="pw-cancel">Batal</button>
+      </form>
       <p class="soc-card-note" id="us-msg" role="status"></p>
       <div class="soc-tablewrap">
         <table class="soc-table">
@@ -1344,6 +1352,7 @@ body::after {
             <th>Peran</th>
             <th>Status</th>
             <th class="soc-num soc-opt">Dibuat</th>
+            <th class="soc-num">Login terakhir</th>
             <th>Aksi</th>
           </tr></thead>
           <tbody id="tb-users"></tbody>
@@ -2821,6 +2830,8 @@ function drawUsers() {
     td(tr, roleName(u.role));
     statusChip(tr, u.disabled ? 'Nonaktif' : 'Aktif');
     td(tr, fmtTime(u.created_at), 'soc-num soc-opt');
+    const ll = td(tr, u.last_login_at ? fmtTime(u.last_login_at) : 'Belum pernah', 'soc-num');
+    if (u.last_login_at && u.last_login_ip) el('div', 'soc-card-note soc-mono', u.last_login_ip, ll);
     const act = td(tr, null);
     if (manage && !self) {
       const rs = el('select', 'soc-select', null, act);
@@ -2833,6 +2844,9 @@ function drawUsers() {
         if (confirm('Ubah peran ' + u.name + ' dari ' + roleName(curRole) + ' menjadi ' + roleName(rs.value) + '? Hak akses berlaku langsung.')) userAction('role', {username: u.name, role: rs.value});
         else rs.value = curRole;
       });
+      const rp = el('button', 'soc-btn', 'Reset sandi', act);
+      rp.type = 'button';
+      rp.addEventListener('click', () => openPwForm(u.name));
       const tog = el('button', 'soc-btn', u.disabled ? 'Aktifkan' : 'Nonaktifkan', act);
       tog.type = 'button';
       tog.addEventListener('click', () => userAction(u.disabled ? 'enable' : 'disable', {username: u.name}));
@@ -2843,7 +2857,7 @@ function drawUsers() {
       });
     }
   });
-  if (!DATA.users.length) emptyRow(tu, 5, manage ? 'Belum ada pengguna.' : 'Peran Anda tidak punya izin melihat daftar pengguna.');
+  if (!DATA.users.length) emptyRow(tu, 6, manage ? 'Belum ada pengguna.' : 'Peran Anda tidak punya izin melihat daftar pengguna.');
 }
 
 async function refreshUsers() {
@@ -2875,6 +2889,35 @@ $('user-form').addEventListener('submit', async (ev) => {
   if ($('uf-pw').value !== $('uf-pw2').value) { $('us-msg').textContent = 'Kata sandi tidak sama.'; return; }
   const ok = await userAction('add', {username: $('uf-name').value, role: $('uf-role').value, password: $('uf-pw').value});
   if (ok) { $('uf-name').value = ''; $('uf-pw').value = ''; $('uf-pw2').value = ''; }
+});
+
+function closePwForm() {
+  const f = $('pw-form');
+  f.hidden = true; f.dataset.user = '';
+  ['pw-new', 'pw-new2'].forEach((id) => { $(id).value = ''; $(id).type = 'password'; });
+}
+function openPwForm(name) {
+  const f = $('pw-form');
+  closePwForm();
+  f.dataset.user = name; $('pw-target').textContent = name; f.hidden = false;
+  $('pw-new').focus();
+}
+$('pw-cancel').addEventListener('click', closePwForm);
+$('pw-gen').addEventListener('click', () => {
+  const abc = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const b = crypto.getRandomValues(new Uint32Array(20));
+  const pw = [...b].map((x) => abc[x % abc.length]).join('');
+  ['pw-new', 'pw-new2'].forEach((id) => { $(id).value = pw; $(id).type = 'text'; });
+  $('us-msg').textContent = 'Kata sandi acak dibuat. Salin dan sampaikan ke pengguna lewat jalur aman; sandi ini tidak ditampilkan lagi setelah disimpan.';
+});
+$('pw-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const name = $('pw-form').dataset.user;
+  if (!name) return;
+  if ($('pw-new').value !== $('pw-new2').value) { $('us-msg').textContent = 'Kata sandi tidak sama.'; return; }
+  if (!confirm('Reset kata sandi ' + name + '? Semua sesi aktifnya akan keluar.')) return;
+  const ok = await userAction('password', {username: name, password: $('pw-new').value});
+  if (ok) { closePwForm(); $('us-msg').textContent = 'Kata sandi ' + name + ' sudah direset dan sesinya dikeluarkan.'; }
 });
 
 const roleName = (id) => (DATA.rbac.roles.find((r) => r.id === id) || {name: id}).name;
