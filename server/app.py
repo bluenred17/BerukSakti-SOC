@@ -523,6 +523,16 @@ def db_case(case_id):
         out['alert_ids']=[r['alert_id'] for r in con.execute("SELECT alert_id FROM case_alerts WHERE case_id=?",(case_id,)).fetchall()]
         return out
 
+CASE_ALERT_MAX=500
+SEV_RANK={"Low":0,"Medium":1,"High":2,"Critical":3}
+
+def case_alert_details(ids):
+    """Ringkasan alert yang tergabung dalam kasus (dari Wazuh Indexer; maksimal 100 terbaru)."""
+    ids=ids[:100]
+    if not ids:return []
+    res=es_search("wazuh-alerts-*",{"size":len(ids),"query":{"ids":{"values":ids}},"sort":[{"timestamp":{"order":"desc"}}],"_source":["timestamp","agent.name","agent.id","rule.id","rule.level","rule.description","rule.groups","data.srcip","data.src_ip"]})
+    return [source_alert(h) for h in res.get("hits",{}).get("hits",[])]
+
 def json_response(handler,status,obj,extra=None):
     body=json.dumps(obj,separators=(",",":"),ensure_ascii=False).encode()
     handler.send_response(status)
@@ -679,7 +689,10 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/cases":json_response(self,200,{"cases":db_cases()});return
         if path.startswith("/api/cases/"):
             case_id=path.rsplit('/',1)[-1];case=db_case(case_id)
-            if case:json_response(self,200,case)
+            if case:
+                try:case["alerts"]=case_alert_details(case["alert_ids"])
+                except Exception as exc:logging.warning("case alerts lookup failed: %s",type(exc).__name__);case["alerts"]=[]
+                json_response(self,200,case)
             else:json_response(self,404,{"error":"Case not found"})
             return
         if path=="/api/health":
@@ -746,6 +759,33 @@ class Handler(BaseHTTPRequestHandler):
                     con.execute("INSERT INTO case_timeline(case_id,at,actor,action,details) VALUES(?,?,?,?,?)",(case_id,now,sess['user'],'Case created',summary))
                 audit('case created',case_id,summary,sess['user']);json_response(self,201,{"ok":True,"case_id":case_id})
             except Exception as exc:logging.exception("case creation failed: %s",type(exc).__name__);json_response(self,503,{"error":"Could not create local case"})
+            return
+        if path.startswith('/api/cases/') and path.endswith('/alerts'):
+            case_id=path.split('/')[-2];raw=body.get('alert_ids')
+            ids=list(dict.fromkeys(str(v)[:512] for v in raw if v))[:50] if isinstance(raw,list) else []
+            if not ids:json_response(self,400,{"error":"Pilih minimal satu alert"});return
+            try:
+                res=es_search('wazuh-alerts-*',{"size":50,"query":{"ids":{"values":ids}},"_source":["rule.level"]})
+                hits=res.get('hits',{}).get('hits',[])
+                if not hits:json_response(self,404,{"error":"Alert yang dipilih tidak ditemukan di Wazuh"});return
+                level={h.get('_id'):int(h.get('_source',{}).get('rule',{}).get('level',0)) for h in hits if h.get('_id')}
+                with db() as con:
+                    case=con.execute("SELECT severity FROM cases WHERE case_id=?",(case_id,)).fetchone()
+                    if not case:json_response(self,404,{"error":"Case not found"});return
+                    existing={r[0] for r in con.execute("SELECT alert_id FROM case_alerts WHERE case_id=?",(case_id,)).fetchall()}
+                    new=[i for i in level if i not in existing]
+                    if len(existing)+len(new)>CASE_ALERT_MAX:json_response(self,400,{"error":"Satu kasus maksimal %d alert"%CASE_ALERT_MAX});return
+                    for i in new:con.execute("INSERT OR IGNORE INTO case_alerts(case_id,alert_id) VALUES(?,?)",(case_id,i))
+                    sev=case['severity']
+                    if new:
+                        top=severity_name(max(level[i] for i in new))
+                        if SEV_RANK.get(top,0)>SEV_RANK.get(sev,0):sev=top
+                    now=now_iso();con.execute("UPDATE cases SET severity=?,updated_at=? WHERE case_id=?",(sev,now,case_id))
+                    skipped=len(level)-len(new)
+                    if new:con.execute("INSERT INTO case_timeline(case_id,at,actor,action,details) VALUES(?,?,?,?,?)",(case_id,now,sess['user'],'Alert ditambahkan',f'{len(new)} alert ditambahkan'+(f' ({skipped} sudah ada di kasus)' if skipped else '')))
+                if new:audit('case alerts',case_id,f'+{len(new)} alert',sess['user'])
+                json_response(self,200,{"ok":True,"added":len(new),"already":len(level)-len(new),"missing":len(ids)-len(level),"total":len(existing)+len(new),"severity":sev})
+            except Exception as exc:logging.exception("case alerts failed: %s",type(exc).__name__);json_response(self,503,{"error":"Tidak bisa menambahkan alert ke kasus"})
             return
         if path.startswith('/api/cases/') and path.endswith('/timeline'):
             case_id=path.split('/')[-2];action=str(body.get('action','Note')).strip()[:120];details=str(body.get('details','')).strip()[:2000]

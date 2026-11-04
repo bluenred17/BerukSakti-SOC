@@ -38,6 +38,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -234,6 +235,9 @@ body::after {
 .detail-log { max-height: 220px; overflow: auto; margin: 6px 0 10px; padding: 10px; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(0, 0, 0, .28); border: 1px solid var(--line); border-radius: var(--radius); }
 .detail-h { margin: 14px 0 4px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 #tr-detail details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.am-chk { width: 30px; text-align: center; }
+.am-chk input { accent-color: var(--accent); cursor: pointer; }
+.am-sel { padding: 8px 10px; border: 1px solid var(--accent); border-radius: var(--radius); background: rgba(91, 157, 224, .08); }
 .soc-select-sm { font-size: 12px; padding: 3px 6px; }
 .soc-btn { font: inherit; font-size: 13px; padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-solid); color: var(--fg); cursor: pointer; }
 .soc-btn:hover { border-color: var(--muted); }
@@ -583,9 +587,22 @@ body::after {
           <option value="100">100 per halaman</option>
         </select>
       </div>
+      <div class="soc-tools am-sel" id="am-sel" hidden>
+        <b id="am-sel-n"></b>
+        <span class="soc-tools" id="am-sel-ctl">
+          <input id="am-sel-title" class="soc-search" type="text" maxlength="240" placeholder="Judul kasus baru…" aria-label="Judul kasus baru">
+          <button type="button" class="soc-btn primary" id="am-sel-new">Buat kasus dari pilihan</button>
+          <select id="am-sel-case" class="soc-select" aria-label="Kasus yang sudah ada"></select>
+          <button type="button" class="soc-btn" id="am-sel-add">Tambahkan ke kasus</button>
+          <button type="button" class="soc-btn" id="am-sel-clear">Kosongkan</button>
+        </span>
+        <button type="button" class="soc-btn" id="am-sel-open" hidden>Buka kasus</button>
+        <span class="soc-card-note" id="am-sel-msg" role="status"></span>
+      </div>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
+            <th class="am-chk" id="am-th-chk"><input type="checkbox" id="am-all" aria-label="Pilih semua alert di halaman ini"></th>
             <th>ID</th>
             <th class="soc-num">Waktu</th>
             <th>Severity</th>
@@ -785,6 +802,7 @@ body::after {
           <span class="soc-card-note" id="cs-msg" role="status"></span>
         </div>
       </div>
+      <div id="cs-alerts"></div>
       <ol class="timeline" id="tl-list"></ol>
     </section>
 
@@ -1733,8 +1751,19 @@ const amSize = () => Number($('am-size').value) || 50;
 function drawAlerts() {
   const tb = $('tb-alerts');
   tb.replaceChildren();
+  const canSel = hasPerm('cases');
+  $('am-th-chk').hidden = !canSel;
   AM.rows.forEach((r) => {
     const tr = el('tr', 'click' + (r.id === selAlert ? ' sel' : ''), null, tb);
+    if (canSel) {
+      const c = el('td', 'am-chk', null, tr);
+      const cb = el('input', null, null, c);
+      cb.type = 'checkbox';
+      cb.checked = SEL.has(r.id);
+      cb.setAttribute('aria-label', 'Pilih alert ' + r.id);
+      c.addEventListener('click', (ev) => ev.stopPropagation());
+      cb.addEventListener('change', () => { toggleSel(r, cb.checked); if (cb.checked !== SEL.has(r.id)) cb.checked = SEL.has(r.id); syncAll(); });
+    }
     td(tr, r.id, 'soc-mono');
     td(tr, fmtTime(r.time), 'soc-num');
     sevChip(tr, r.severity);
@@ -1748,7 +1777,9 @@ function drawAlerts() {
   const size = amSize();
   const pages = Math.max(1, Math.ceil(Math.min(AM.total, AM.window) / size));
   $('am-nomatch').hidden = true;
-  if (!AM.rows.length) emptyRow(tb, 8, AM.error || 'Tidak ada alert yang cocok dengan filter ini.');
+  if (!AM.rows.length) emptyRow(tb, canSel ? 9 : 8, AM.error || 'Tidak ada alert yang cocok dengan filter ini.');
+  syncAll();
+  drawSelBar();
   $('am-prev').disabled = AM.page <= 0;
   $('am-next').disabled = AM.page >= pages - 1;
   $('am-page').textContent = AM.rows.length
@@ -1782,6 +1813,101 @@ async function loadAlertPage() {
   drawAlerts();
   loadRep(AM.rows.map((r) => r.srcip), false).then((changed) => { if (changed && seq === AM.seq) drawAlerts(); });
 }
+
+// ---- Gabungkan beberapa alert ke satu kasus ----
+const SEL = new Map();
+const SEL_MAX = 50;
+const selUi = {msg: '', caseId: '', titleEdited: false};
+
+function toggleSel(r, on) {
+  if (!on) { SEL.delete(r.id); }
+  else if (SEL.size >= SEL_MAX && !SEL.has(r.id)) { selUi.msg = 'Maksimal ' + SEL_MAX + ' alert per kasus dalam satu kali pilih.'; selUi.caseId = ''; }
+  else { SEL.set(r.id, {id: r.id, rule: r.rule, severity: r.severity, asset: r.asset}); selUi.msg = ''; }
+  drawSelBar();
+}
+
+function syncAll() {
+  const all = $('am-all');
+  const rows = AM.rows;
+  all.checked = rows.length > 0 && rows.every((r) => SEL.has(r.id));
+  all.indeterminate = !all.checked && rows.some((r) => SEL.has(r.id));
+}
+
+function autoTitle() {
+  const items = [...SEL.values()];
+  const rank = {Critical: 3, High: 2, Medium: 1, Low: 0};
+  items.sort((x, y) => rank[y.severity] - rank[x.severity]);
+  const assets = new Set(items.map((i) => i.asset));
+  return items.length + ' alert: ' + (items[0] ? items[0].rule : '') + (assets.size === 1 ? ' di ' + items[0].asset : '');
+}
+
+function drawSelBar() {
+  const bar = $('am-sel');
+  const has = SEL.size > 0;
+  bar.hidden = !(has || selUi.msg);
+  $('am-sel-ctl').hidden = !has;
+  $('am-sel-n').textContent = has ? fmtInt(SEL.size) + ' alert dipilih' : '';
+  $('am-sel-msg').textContent = selUi.msg;
+  $('am-sel-open').hidden = !selUi.caseId;
+  if (has && !selUi.titleEdited) $('am-sel-title').value = autoTitle();
+  const sel = $('am-sel-case');
+  const keep = sel.value;
+  sel.replaceChildren();
+  opt(sel, '', 'Pilih kasus yang ada…');
+  DATA.cases.filter((c) => c.status !== 'Closed' && c.status !== 'Resolved').forEach((c) => opt(sel, c.case_id, c.case_id + ' · ' + (c.title.length > 40 ? c.title.slice(0, 40) + '…' : c.title)));
+  sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
+}
+
+async function selAction(btn, run) {
+  const ids = [...SEL.keys()];
+  if (!ids.length) return;
+  btn.disabled = true;
+  selUi.msg = 'Memproses…'; selUi.caseId = '';
+  drawSelBar();
+  try {
+    const out = await run(ids);
+    const cs = await getJson('api/cases').catch(() => null);
+    if (cs) DATA.cases = cs.cases || [];
+    selCase = out.caseId;
+    drawCases();
+    drawTimeline();
+    selUi.msg = out.msg;
+    selUi.caseId = out.caseId;
+    SEL.clear();
+    selUi.titleEdited = false;
+    $('am-sel-title').value = '';
+    drawAlerts();
+  } catch (e) { selUi.msg = e.message; }
+  btn.disabled = false;
+  drawSelBar();
+}
+
+$('am-sel-title').addEventListener('input', () => { selUi.titleEdited = true; });
+$('am-all').addEventListener('change', (ev) => {
+  AM.rows.forEach((r) => toggleSel(r, ev.currentTarget.checked));
+  drawAlerts();
+});
+$('am-sel-clear').addEventListener('click', () => { SEL.clear(); selUi.msg = ''; selUi.caseId = ''; selUi.titleEdited = false; drawAlerts(); });
+$('am-sel-new').addEventListener('click', (ev) => {
+  const title = $('am-sel-title').value.trim();
+  if (!title) { selUi.msg = 'Isi judul kasus dulu.'; drawSelBar(); return; }
+  selAction(ev.currentTarget, async (ids) => {
+    const res = await postJson('api/cases', {title, alert_ids: ids, owner: ''});
+    return {caseId: res.case_id, msg: 'Kasus ' + res.case_id + ' dibuat dengan ' + fmtInt(ids.length) + ' alert.'};
+  });
+});
+$('am-sel-add').addEventListener('click', (ev) => {
+  const id = $('am-sel-case').value;
+  if (!id) { selUi.msg = 'Pilih kasus yang ada dulu.'; drawSelBar(); return; }
+  selAction(ev.currentTarget, async (ids) => {
+    const res = await postJson('api/cases/' + encodeURIComponent(id) + '/alerts', {alert_ids: ids});
+    return {caseId: id, msg: fmtInt(res.added) + ' alert ditambahkan ke ' + id + (res.already ? ', ' + fmtInt(res.already) + ' sudah ada di kasus' : '') + (res.missing ? ', ' + fmtInt(res.missing) + ' tidak ditemukan di Wazuh' : '') + '. Total ' + fmtInt(res.total) + ' alert.'};
+  });
+});
+$('am-sel-open').addEventListener('click', () => {
+  try { history.replaceState(null, '', '#incidents'); } catch (e) {}
+  showView('incidents');
+});
 
 function fillAgents() {
   const sel = $('am-agent');
@@ -2190,6 +2316,25 @@ async function drawTimeline() {
       el('span', 'tl-meta', fmtTime(e.at) + ' · ' + e.actor, li);
       el('span', null, e.action + (e.details ? ': ' + e.details : ''), li);
     });
+    const box = $('cs-alerts');
+    box.replaceChildren();
+    const list = c.alerts || [];
+    el('h3', 'detail-h', 'Alert dalam kasus (' + fmtInt((c.alert_ids || []).length) + (list.length < (c.alert_ids || []).length ? ', menampilkan ' + list.length + ' terbaru' : '') + ')', box);
+    if (list.length) {
+      const wrap = el('div', 'soc-tablewrap', null, box);
+      const t = el('table', 'soc-table', null, wrap);
+      const hr = el('tr', null, null, el('thead', null, null, t));
+      ['Waktu', 'Severity', 'Rule', 'Aset', 'IP sumber'].forEach((h) => el('th', null, h, hr));
+      const tbd = el('tbody', null, null, t);
+      list.forEach((x) => {
+        const tr = el('tr', null, null, tbd);
+        td(tr, fmtTime(wzIso(x.timestamp)), 'soc-num');
+        sevChip(tr, x.severity);
+        td(tr, x.description);
+        td(tr, x.agent, 'soc-opt soc-mono');
+        td(tr, x.srcip || '—', 'soc-mono');
+      });
+    } else el('p', 'soc-card-note', 'Detail alert tidak tersedia (mungkin sudah lewat masa simpan di indexer).', box);
     $('cs-ctl').hidden = !hasPerm('cases');
     $('cs-status').value = c.status;
     $('cs-owner').value = c.owner || '';
