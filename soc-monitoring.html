@@ -536,26 +536,10 @@ body::after {
   </div>
 
   <div class="soc-grid">
-    <section class="soc-card soc-wide" id="tr-card" hidden>
-      <h2 id="tr-title">Triage alert</h2>
-      <p class="soc-card-note" id="tr-note"></p>
-      <div id="tr-detail"></div>
-      <div class="soc-tools">
-        <select id="tr-status" class="soc-select" aria-label="Status triage"></select>
-        <input id="tr-assignee" class="soc-search" type="text" maxlength="120" placeholder="Ditugaskan ke…" aria-label="Ditugaskan ke">
-      </div>
-      <textarea id="tr-text" class="soc-area" maxlength="2000" rows="2" placeholder="Catatan analis…" aria-label="Catatan triage"></textarea>
-      <div class="soc-tools">
-        <button type="button" class="soc-btn primary" id="tr-save">Simpan triage</button>
-        <input id="tr-case-title" class="soc-search" type="text" maxlength="240" placeholder="Judul kasus baru…" aria-label="Judul kasus">
-        <button type="button" class="soc-btn" id="tr-case">Buat kasus dari alert ini</button>
-        <span class="soc-card-note" id="tr-msg" role="status"></span>
-      </div>
-    </section>
-
     <section class="soc-card soc-wide">
       <h2>Antrean alert</h2>
       <p class="soc-card-note">Alert dari Wazuh Indexer (hanya baca), level 3 ke atas; waktu dalam WIB (UTC+7). Filter dan halaman dijalankan di server, jadi mencakup semua alert pada rentang waktu. Status triage berasal dari catatan lokal dashboard.</p>
+      <p class="soc-card-note"><b>Klik baris alert</b> untuk membuka detail dan triage; kartunya muncul tepat di bawah tabel.</p>
       <div class="soc-tools">
         <input id="am-search" class="soc-search" type="search" placeholder="Cari ID, rule, IP sumber, aset…" aria-label="Cari alert">
         <select id="am-range" class="soc-select" aria-label="Rentang waktu">
@@ -609,6 +593,23 @@ body::after {
         <button type="button" class="soc-btn" id="am-prev">Sebelumnya</button>
         <button type="button" class="soc-btn" id="am-next">Berikutnya</button>
         <span class="soc-card-note" id="am-page" role="status"></span>
+      </div>
+    </section>
+
+    <section class="soc-card soc-wide" id="tr-card" hidden>
+      <h2 id="tr-title">Triage alert</h2>
+      <p class="soc-card-note" id="tr-note"></p>
+      <div id="tr-detail"></div>
+      <div class="soc-tools">
+        <select id="tr-status" class="soc-select" aria-label="Status triage"></select>
+        <input id="tr-assignee" class="soc-search" type="text" maxlength="120" placeholder="Ditugaskan ke…" aria-label="Ditugaskan ke">
+      </div>
+      <textarea id="tr-text" class="soc-area" maxlength="2000" rows="2" placeholder="Catatan analis…" aria-label="Catatan triage"></textarea>
+      <div class="soc-tools">
+        <button type="button" class="soc-btn primary" id="tr-save">Simpan triage</button>
+        <input id="tr-case-title" class="soc-search" type="text" maxlength="240" placeholder="Judul kasus baru…" aria-label="Judul kasus">
+        <button type="button" class="soc-btn" id="tr-case">Buat kasus dari alert ini</button>
+        <span class="soc-card-note" id="tr-msg" role="status"></span>
       </div>
     </section>
   </div>
@@ -1595,7 +1596,7 @@ function drawAlerts() {
     td(tr, r.source, 'soc-opt');
     td(tr, r.asset, 'soc-opt soc-mono');
     statusChip(tr, r.status);
-    tr.addEventListener('click', () => { selAlert = r.id; drawAlerts(); drawTriage(); $('tr-card').scrollIntoView({behavior: 'smooth', block: 'nearest'}); });
+    tr.addEventListener('click', () => { selAlert = r.id; drawAlerts(); drawTriage(); $('tr-card').scrollIntoView({behavior: 'smooth', block: 'start'}); });
   });
   const size = amSize();
   const pages = Math.max(1, Math.ceil(Math.min(AM.total, AM.window) / size));
