@@ -889,7 +889,6 @@ body::after {
   <div class="soc-grid">
     <section class="soc-card soc-wide">
       <h2>Playbook: blokir IP sumber</h2>
-      <p class="soc-card-note" id="pb-rule"></p>
       <div class="soc-tiles">
         <div class="soc-tile"><span class="soc-tile-label">Mode</span><span class="soc-tile-value" id="pb-t-mode" style="font-size:1.2rem">—</span><span class="soc-tile-sub" id="pb-t-mode-sub"></span></div>
         <div class="soc-tile"><span class="soc-tile-label">Menunggu persetujuan</span><span class="soc-tile-value" id="pb-t-prop">—</span><span class="soc-tile-sub">usulan ban</span></div>
@@ -897,6 +896,7 @@ body::after {
         <div class="soc-tile"><span class="soc-tile-label">Simulasi, 24 jam</span><span class="soc-tile-value" id="pb-t-dry">—</span><span class="soc-tile-sub">IP yang akan diblokir</span></div>
         <div class="soc-tile"><span class="soc-tile-label">Pembantu root</span><span class="soc-tile-value" id="pb-t-helper" style="font-size:1.2rem">—</span><span class="soc-tile-sub" id="pb-t-helper-sub"></span></div>
       </div>
+      <p class="soc-card-note soc-bad" id="pb-cap" role="alert" hidden></p>
       <div id="pb-form" hidden>
         <h3 class="detail-h">Pengaturan (administrator)</h3>
         <div class="soc-tools">
@@ -955,7 +955,6 @@ body::after {
 
     <section class="soc-card soc-wide" id="pbf-card">
       <h2>Server lain yang menarik daftar ban</h2>
-      <p class="soc-card-note" id="pbf-note">Memuat…</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -973,7 +972,6 @@ body::after {
 
     <section class="soc-card soc-wide" id="pbw-card">
       <h2>IP sumber saat ini (live)</h2>
-      <p class="soc-card-note" id="pbw-note">Memuat…</p>
       <div class="soc-tablewrap">
         <table class="soc-table">
           <thead><tr>
@@ -3316,14 +3314,12 @@ const PB_LEVEL = {8: 'High (level 8+)', 10: 'level 10+', 12: 'Critical (level 12
 
 function drawPlaybook() {
   const d = DATA.pb;
-  if (!d) { $('pb-rule').textContent = 'Status playbook tidak bisa dimuat dari server.'; return; }
+  if (!d) { $('pb-actmsg').textContent = 'Status playbook tidak bisa dimuat dari server.'; return; }
   const c = d.config;
-  $('pb-rule').textContent = 'Aturan: IP publik yang bukan di daftar putih dan memicu minimal ' + c.min_alerts + ' alert ' + (PB_LEVEL[c.min_level] || 'level ' + c.min_level + '+') + ' dalam ' + c.window_min + ' menit di agen ' + (c.agents.length ? c.agents.join(', ') : 'mana pun')
-    + (c.suricata ? ', atau minimal ' + c.suricata_min_alerts + ' alert Suricata yang masuk ke server' : '') + (c.min_abuse_score ? ' dan berskor AbuseIPDB minimal ' + c.min_abuse_score : '') + ' dicatat sesuai mode. Pemblokiran dijalankan di jail fail2ban "' + d.jail + '" (UFW, semua port).';
+  const cap = d.capacity || {full: false};
+  $('pb-cap').hidden = !cap.full;
+  if (cap.full) $('pb-cap').textContent = 'Batas ban aktif tercapai (' + cap.active + ' dari ' + cap.max + '): ban otomatis baru ditunda sampai ada ban yang kedaluwarsa atau batas max_active_bans dinaikkan di /etc/soc-automation/ban-policy.json.';
   const fd = d.feed || {enabled: false, hosts: []};
-  $('pbf-note').textContent = fd.enabled
-    ? 'Server lain (mis. webserver) menarik daftar ban aktif dari dashboard tiap 15 detik lewat agen soc-ban-agent dan menerapkannya ke jail fail2ban miliknya. Dashboard tidak pernah masuk ke server itu; agen memeriksa ulang IP publik, daftar putih, dan batas di sisinya.'
-    : 'Feed ban belum diaktifkan di server dashboard (berkas token /etc/soc-automation/feed-token belum ada), jadi tidak ada server lain yang bisa menarik daftar ban.';
   const fb = $('tb-pbf');
   fb.replaceChildren();
   fd.hosts.forEach((h) => {
@@ -3337,8 +3333,6 @@ function drawPlaybook() {
   });
   if (!fd.hosts.length) emptyRow(fb, 6, fd.enabled ? 'Belum ada server yang menarik. Pasang agen di server tujuan (server/webserver-agent).' : 'Belum aktif.');
   const wt = d.watch || {ips: [], window_min: c.window_min, at: ''};
-  $('pbw-note').textContent = 'IP yang muncul sebagai sumber alert level ' + (wt.min_level || c.min_level) + '+ dalam ' + wt.window_min + ' menit terakhir (sumber yang sama dengan Alert Management), diperbarui otomatis tiap 5 detik. Playbook mengevaluasi tiap ' + (d.eval_interval || 20) + ' detik; baris di sini menjelaskan keputusan untuk tiap IP, jadi IP yang belum masuk daftar aksi tetap terlihat beserta alasannya.'
-    + (wt.at ? ' Terakhir diambil ' + fmtTime(wt.at) + '.' : '');
   const wb = $('tb-pbw');
   wb.replaceChildren();
   wt.ips.forEach((x) => {

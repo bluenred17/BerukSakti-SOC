@@ -1135,6 +1135,11 @@ def pb_banned():
         for b in j.get("banned") or []:out.setdefault(b.get("ip"),j.get("name"))
     return out,bool(d.get("available") and d.get("ok") and not d.get("stale")),d
 
+def pb_capacity(pol,banned):
+    """Kapasitas ban aktif: jumlah IP di jail playbook dibanding batas total milik pembantu root. Bila penuh, pembantu menolak ban baru ('batas ban aktif tercapai')."""
+    active=sum(1 for j in banned.values() if j==PB_JAIL);mx=int(pol.get("max_active_bans",200))
+    return {"active":active,"max":mx,"full":mx>0 and active>=mx}
+
 def pb_ban_seconds():
     try:
         for j in pb_banned()[2].get("jails") or []:
@@ -1184,14 +1189,15 @@ def pb_evaluate_rep(cfg):
     mode=cfg["rep_mode"];status={"dry-run":"dry-run","approval":"proposed","auto":"approved"}[mode]
     pol=pb_policy();banned,_,_=pb_banned();now=time.time()
     wide=dict(cfg,min_alerts=1,suricata_min_alerts=1,window_min=cfg["rep_window_min"],min_level=cfg["rep_min_level"],agents=[])
+    if status=="approved" and pb_capacity(pol,banned)["full"]:return 0  # penuh: jangan menumpuk aksi yang pasti ditolak pembantu
     cands=[]
     with db() as con:
         made=pb_made(con,status,now)
         for b in pb_candidates(wide):
             ip=str(b["key"])
             if pb_protected(ip,pol) or ip in banned:continue
-            ex=con.execute("SELECT status FROM playbook_actions WHERE ip=? AND at>? ORDER BY at DESC LIMIT 1",(ip,now-86400)).fetchone()
-            if ex and (ex[0] in PB_BLOCKING or (ex[0]=="dry-run" and mode=="dry-run")):continue
+            ex=con.execute("SELECT status,at FROM playbook_actions WHERE ip=? AND at>? ORDER BY at DESC LIMIT 1",(ip,now-86400)).fetchone()
+            if ex and (ex[0] in PB_BLOCKING or (ex[0]=="dry-run" and mode=="dry-run") or (ex[0]=="failed" and now-ex[1]<600)):continue
             cands.append(b)
     budget=10;rows=[]
     for b in sorted(cands,key=lambda x:-x["doc_count"]):
@@ -1212,14 +1218,15 @@ def pb_evaluate_rep(cfg):
 def pb_evaluate(cfg):
     """Cari IP yang memenuhi syarat dan catat sebagai simulasi, usulan, atau (mode auto) aksi yang langsung disetujui."""
     pol=pb_policy();banned,_,_=pb_banned();now=time.time();status={"dry-run":"dry-run","approval":"proposed","auto":"approved"}[cfg["mode"]]
+    if status=="approved" and pb_capacity(pol,banned)["full"]:return 0  # penuh: jangan menumpuk aksi yang pasti ditolak pembantu
     cands=[]
     with db() as con:
         made=pb_made(con,status,now)
         for b in pb_candidates(cfg):
             ip=str(b["key"])
             if pb_protected(ip,pol) or ip in banned:continue
-            ex=con.execute("SELECT status FROM playbook_actions WHERE ip=? AND at>? ORDER BY at DESC LIMIT 1",(ip,now-86400)).fetchone()
-            if ex and (ex[0] in PB_BLOCKING or (ex[0]=="dry-run" and cfg["mode"]=="dry-run")):continue
+            ex=con.execute("SELECT status,at FROM playbook_actions WHERE ip=? AND at>? ORDER BY at DESC LIMIT 1",(ip,now-86400)).fetchone()
+            if ex and (ex[0] in PB_BLOCKING or (ex[0]=="dry-run" and cfg["mode"]=="dry-run") or (ex[0]=="failed" and now-ex[1]<600)):continue
             cands.append(b)
     budget=10;rows=[]
     for b in cands:
@@ -1368,7 +1375,7 @@ def pb_state():
         except ValueError:x["rules"]=[]
         try:x["cats"]=json.loads(x.get("cats") or "[]")
         except ValueError:x["cats"]=[]
-    return {"config":cfg,"abuse_enabled":bool(ABUSE_KEY),"policy":pol,"helper_alive":pb_helper_alive(),"jail":PB_JAIL,"ban_hours":round(pb_ban_seconds()/3600,1),"actions":acts,"counts_24h":counts,"banned_active":active,"watch":pb_watch(cfg),"eval_interval":PB_EVAL_INTERVAL,"feed":{"enabled":bool(feed_token()),"hosts":feed_hosts_state()}}
+    return {"config":cfg,"abuse_enabled":bool(ABUSE_KEY),"policy":pol,"helper_alive":pb_helper_alive(),"jail":PB_JAIL,"ban_hours":round(pb_ban_seconds()/3600,1),"actions":acts,"counts_24h":counts,"banned_active":active,"watch":pb_watch(cfg),"eval_interval":PB_EVAL_INTERVAL,"feed":{"enabled":bool(feed_token()),"hosts":feed_hosts_state()},"capacity":pb_capacity(pol,pb_banned()[0])}
 
 def pb_decide(action_id,verb,user):
     """Hasil: (status_http, dict). verb: approve | reject | unban."""
