@@ -586,6 +586,11 @@ def init_db():
         if "cats" not in [r[1] for r in con.execute("PRAGMA table_info(playbook_actions)")]:
             con.execute("ALTER TABLE playbook_actions ADD COLUMN cats TEXT NOT NULL DEFAULT '[]'")
         con.execute("CREATE INDEX IF NOT EXISTS audit_login ON audit(action,target,id)")
+        cols=[r[1] for r in con.execute("PRAGMA table_info(cases)")]
+        for col in ("first_response_at","resolved_at"):
+            if col not in cols:con.execute("ALTER TABLE cases ADD COLUMN %s TEXT"%col)
+        con.execute("CREATE TABLE IF NOT EXISTS sla_cfg(k TEXT PRIMARY KEY,v TEXT NOT NULL)")
+        sla_backfill(con)
         con.execute("CREATE TABLE IF NOT EXISTS feed_hosts(host TEXT PRIMARY KEY,at REAL NOT NULL,ip TEXT NOT NULL DEFAULT '',applied INTEGER NOT NULL DEFAULT 0,failed INTEGER NOT NULL DEFAULT 0)")
 
 def last_logins():
@@ -602,10 +607,139 @@ def audit(action,target,details='',actor='system'):
         with db() as con:con.execute("INSERT INTO audit(at,actor,action,target,details) VALUES(?,?,?,?,?)",(now_iso(),actor,action,target,details[:1000]))
     except Exception as exc:logging.warning("audit write failed: %s",type(exc).__name__)
 
+SLA_SEV=("Critical","High","Medium","Low")
+SLA_DEFAULTS={"Critical":{"ack":15,"res":240},"High":{"ack":60,"res":1440},"Medium":{"ack":240,"res":4320},"Low":{"ack":1440,"res":10080}}
+CASE_DONE=("Resolved","Closed")
+
+def sla_backfill(con):
+    """Kasus yang dibuat sebelum fitur SLA: isi waktu respons dan penyelesaian dari audit log (baris 'case update'); hanya mengisi yang masih kosong."""
+    try:
+        for cid,status,upd in con.execute("SELECT case_id,status,updated_at FROM cases WHERE first_response_at IS NULL OR (resolved_at IS NULL AND status IN ('Resolved','Closed'))").fetchall():
+            first=con.execute("SELECT min(at) FROM audit WHERE action='case update' AND target=?",(cid,)).fetchone()[0]
+            if first:con.execute("UPDATE cases SET first_response_at=? WHERE case_id=? AND first_response_at IS NULL",(first,cid))
+            if status in CASE_DONE:
+                done=con.execute("SELECT max(at) FROM audit WHERE action='case update' AND target=? AND (details LIKE 'Resolved%' OR details LIKE 'Closed%')",(cid,)).fetchone()[0] or upd
+                con.execute("UPDATE cases SET resolved_at=? WHERE case_id=? AND resolved_at IS NULL",(done,cid))
+                con.execute("UPDATE cases SET first_response_at=? WHERE case_id=? AND first_response_at IS NULL",(done,cid))
+    except Exception as exc:logging.warning("sla backfill: %s",type(exc).__name__)
+
+def sla_validate(body):
+    """Target SLA dari administrator: menit per severity; respons harus lebih cepat dari penyelesaian. Melempar ValueError bila tidak sah."""
+    if not isinstance(body,dict):raise ValueError("Format target tidak valid")
+    out={}
+    for sev in SLA_SEV:
+        row=body.get(sev)
+        if not isinstance(row,dict):raise ValueError("Target %s tidak lengkap"%sev)
+        vals={}
+        for k in ("ack","res"):
+            v=row.get(k)
+            if isinstance(v,bool) or not isinstance(v,(int,float,str)):raise ValueError("Target %s.%s harus berupa angka"%(sev,k))
+            try:v=int(float(v))
+            except ValueError:raise ValueError("Target %s.%s harus berupa angka"%(sev,k))
+            if not 1<=v<=525600:raise ValueError("Target %s.%s harus antara 1 dan 525600 menit"%(sev,k))
+            vals[k]=v
+        if vals["ack"]>vals["res"]:raise ValueError("Target respons %s tidak boleh lebih lama dari target penyelesaian"%sev)
+        out[sev]=vals
+    return out
+
+def sla_config():
+    try:
+        with db() as con:r=con.execute("SELECT v FROM sla_cfg WHERE k='targets'").fetchone()
+        if r:
+            cfg=sla_validate(json.loads(r[0]))
+            return cfg
+    except Exception as exc:logging.warning("sla config: %s",type(exc).__name__)
+    return {k:dict(v) for k,v in SLA_DEFAULTS.items()}
+
+def _ts(v):
+    try:return datetime.fromisoformat(v).timestamp() if v else None
+    except ValueError:return None
+
+def case_sla(c,cfg,now=None):
+    """SLA satu kasus. Respons: sejak dibuat sampai respons pertama (status keluar dari Open atau pemilik diisi). Penyelesaian: sampai Resolved/Closed.
+    Keadaan: met, breached (dilanggar), at_risk (sisa 25% atau kurang), ok, na."""
+    now=now or time.time();t=cfg.get(c.get("severity"),cfg["Medium"]);created=_ts(c.get("created_at")) or now
+    out={"ack_target":t["ack"],"res_target":t["res"]}
+    for key,end,target in (("ack",_ts(c.get("first_response_at")),t["ack"]),("res",_ts(c.get("resolved_at")) or (_ts(c.get("updated_at")) if c.get("status") in CASE_DONE else None),t["res"])):
+        if end is not None:
+            used=max(0.0,(end-created)/60)
+            out[key+"_state"]="met" if used<=target else "breached";out[key+"_minutes"]=round(used,1);out[key+"_left"]=round(target-used,1)
+        else:
+            used=max(0.0,(now-created)/60);left=target-used
+            out[key+"_state"]="breached" if left<0 else "at_risk" if left<=target*0.25 else "ok";out[key+"_minutes"]=None;out[key+"_left"]=round(left,1)
+    return out
+
+def case_report(days):
+    """Ringkasan kasus yang dibuat dalam N hari terakhir, ditambah keadaan SLA kasus yang masih terbuka sekarang."""
+    days=max(1,min(int(days),365));now=time.time();since=now-days*86400;cfg=sla_config()
+    with db() as con:
+        allc=[dict(r) for r in con.execute("SELECT * FROM cases").fetchall()]
+    inrange=[c for c in allc if (_ts(c["created_at"]) or 0)>=since]
+    for c in allc:c["sla"]=case_sla(c,cfg,now)
+    sla={c["case_id"]:c["sla"] for c in allc}
+    def med(v):
+        v=sorted(v);n=len(v)
+        return None if not n else (v[n//2] if n%2 else round((v[n//2-1]+v[n//2])/2,1))
+    def avg(v):return round(sum(v)/len(v),1) if v else None
+    def rate(m,b):return None if m+b==0 else round(100*m/(m+b),1)
+    sev_rows=[]
+    for sev in list(SLA_SEV)+["Semua"]:
+        cs=[c for c in inrange if sev=="Semua" or c["severity"]==sev]
+        ack=[sla[c["case_id"]]["ack_minutes"] for c in cs if sla[c["case_id"]]["ack_minutes"] is not None]
+        res=[sla[c["case_id"]]["res_minutes"] for c in cs if sla[c["case_id"]]["res_minutes"] is not None]
+        st=lambda k,v:sum(1 for c in cs if sla[c["case_id"]][k+"_state"]==v)
+        sev_rows.append({"severity":sev,"created":len(cs),"resolved":sum(1 for c in cs if c["status"] in CASE_DONE),"open":sum(1 for c in cs if c["status"] not in CASE_DONE),
+            "mtta_avg":avg(ack),"mtta_median":med(ack),"mttr_avg":avg(res),"mttr_median":med(res),
+            "ack_met":st("ack","met"),"ack_breached":st("ack","breached"),"res_met":st("res","met"),"res_breached":st("res","breached"),
+            "ack_compliance":rate(st("ack","met"),st("ack","breached")),"res_compliance":rate(st("res","met"),st("res","breached"))})
+    opn=[c for c in allc if c["status"] not in CASE_DONE]
+    def age_bucket(c):
+        d=(now-(_ts(c["created_at"]) or now))/86400
+        return "< 1 hari" if d<1 else "1-3 hari" if d<3 else "3-7 hari" if d<7 else "> 7 hari"
+    aging={b:0 for b in ("< 1 hari","1-3 hari","3-7 hari","> 7 hari")}
+    for c in opn:aging[age_bucket(c)]+=1
+    owners={}
+    for c in inrange:
+        o=c["owner"] or "(belum ada pemilik)";r=owners.setdefault(o,{"owner":o,"created":0,"open":0});r["created"]+=1;r["open"]+=1 if c["status"] not in CASE_DONE else 0
+    breached=[]
+    for c in allc:
+        sl=c["sla"]
+        for key,label in (("ack","respons"),("res","penyelesaian")):
+            if sl[key+"_state"]=="breached" and (c["status"] not in CASE_DONE or (_ts(c["created_at"]) or 0)>=since):
+                breached.append({"case_id":c["case_id"],"title":c["title"],"severity":c["severity"],"status":c["status"],"owner":c["owner"],"sla":label,"over_minutes":round(-sl[key+"_left"],1),"open":c["status"] not in CASE_DONE})
+    breached.sort(key=lambda r:(not r["open"],-r["over_minutes"]))
+    status_counts={}
+    for c in inrange:status_counts[c["status"]]=status_counts.get(c["status"],0)+1
+    return {"days":days,"generated_at":iso_utc(now),"targets":cfg,"totals":sev_rows[-1],"by_severity":sev_rows[:-1],"by_status":status_counts,
+        "open_now":len(opn),"breached_now":sum(1 for c in opn if c["sla"]["ack_state"]=="breached" or c["sla"]["res_state"]=="breached"),
+        "at_risk_now":sum(1 for c in opn if "at_risk" in (c["sla"]["ack_state"],c["sla"]["res_state"]) and "breached" not in (c["sla"]["ack_state"],c["sla"]["res_state"])),
+        "aging":aging,"by_owner":sorted(owners.values(),key=lambda r:-r["created"]),"breached":breached[:25]}
+
+def csv_cell(v):
+    """Sel CSV: nilai yang diawali = + - @ diberi tanda petik agar tidak dijalankan sebagai rumus oleh Excel."""
+    t="" if v is None else str(v)
+    if t[:1] in ("=","+","-","@","\t","\r"):t="'"+t
+    return '"'+t.replace('"','""').replace("\r"," ").replace("\n"," ")+'"'
+
+def case_csv(days):
+    days=max(1,min(int(days),365));since=time.time()-days*86400;cfg=sla_config();now=time.time()
+    with db() as con:
+        rows=[dict(r) for r in con.execute("SELECT c.*,(SELECT count(*) FROM case_alerts a WHERE a.case_id=c.case_id) AS alert_count FROM cases c ORDER BY created_at DESC").fetchall()]
+    head=["case_id","judul","severity","status","pemilik","jumlah_alert","dibuat_utc","respons_pertama_utc","selesai_utc","mtta_menit","mttr_menit","sla_respons","sla_penyelesaian","target_respons_menit","target_penyelesaian_menit","ringkasan"]
+    out=[",".join(head)]
+    for c in rows:
+        if (_ts(c["created_at"]) or 0)<since:continue
+        sl=case_sla(c,cfg,now)
+        out.append(",".join(csv_cell(v) for v in (c["case_id"],c["title"],c["severity"],c["status"],c["owner"],c["alert_count"],c["created_at"],c["first_response_at"],c["resolved_at"],sl["ack_minutes"],sl["res_minutes"],sl["ack_state"],sl["res_state"],sl["ack_target"],sl["res_target"],c["summary"])))
+    return "\ufeff"+"\r\n".join(out)+"\r\n"
+
 def db_cases():
     with db() as con:
         rows=con.execute("SELECT c.*,COUNT(ca.alert_id) AS alert_count FROM cases c LEFT JOIN case_alerts ca ON c.case_id=ca.case_id GROUP BY c.case_id ORDER BY c.updated_at DESC LIMIT 200").fetchall()
-        return [dict(r) for r in rows]
+        cases=[dict(r) for r in rows]
+    cfg=sla_config();now=time.time()
+    for c in cases:c["sla"]=case_sla(c,cfg,now)
+    return cases
 
 def db_case(case_id):
     with db() as con:
@@ -614,7 +748,8 @@ def db_case(case_id):
         out=dict(row)
         out['timeline']=[dict(r) for r in con.execute("SELECT at,actor,action,details FROM case_timeline WHERE case_id=? ORDER BY id",(case_id,)).fetchall()]
         out['alert_ids']=[r['alert_id'] for r in con.execute("SELECT alert_id FROM case_alerts WHERE case_id=?",(case_id,)).fetchall()]
-        return out
+    out["sla"]=case_sla(out,sla_config())
+    return out
 
 AI_BASE_URL=os.environ.get("AI_BASE_URL","https://ai.sumopod.com/v1").rstrip("/")
 AI_MODEL=os.environ.get("AI_MODEL","claude-sonnet-4-6")
@@ -1490,7 +1625,19 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:json_response(self,400,{"error":str(exc)})
             except Exception as exc:logging.exception("IOC lookup failed: %s",type(exc).__name__);json_response(self,503,{"error":"IOC lookup unavailable"})
             return
-        if path=="/api/cases":json_response(self,200,{"cases":db_cases()});return
+        if path=="/api/cases":json_response(self,200,{"cases":db_cases(),"sla":sla_config(),"sla_defaults":SLA_DEFAULTS});return
+        if path in ("/api/cases/report","/api/cases/export.csv"):
+            if not can(sess,"cases"):json_response(self,403,{"error":"Peran Anda tidak boleh melihat laporan kasus"});return
+            try:days=int(qs.get("days",["30"])[0])
+            except ValueError:json_response(self,400,{"error":"Parameter days tidak valid"});return
+            try:
+                if path.endswith("report"):json_response(self,200,case_report(days));return
+                body=case_csv(days).encode("utf-8")
+                self.send_response(200)
+                for k,v in (("Content-Type","text/csv; charset=utf-8"),("Content-Disposition",'attachment; filename="kasus-%s.csv"'%time.strftime("%Y%m%d",time.gmtime())),("Content-Length",str(len(body))),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff")):self.send_header(k,v)
+                self.end_headers();self.wfile.write(body)
+            except Exception as exc:logging.exception("case report failed: %s",type(exc).__name__);json_response(self,503,{"error":"Laporan kasus tidak tersedia"})
+            return
         if path.startswith("/api/cases/"):
             case_id=path.rsplit('/',1)[-1];case=db_case(case_id)
             if case:
@@ -1532,7 +1679,7 @@ class Handler(BaseHTTPRequestHandler):
             if sess:audit("logout",sess["user"],self.client_ip(),actor=sess["user"])
             json_response(self,200,{"ok":True},[("Set-Cookie",self.cookie_header("",0))]);return
         if not sess:json_response(self,401,{"error":"Login diperlukan"});return
-        need="triage" if path in ("/api/triage","/api/ai/analyze") else "cases" if path.startswith("/api/cases") else "users" if path.startswith("/api/users/") else "integrations" if path=="/api/playbook/config" else "approve" if path.startswith("/api/playbook/actions/") else None
+        need="integrations" if path=="/api/sla" else "triage" if path in ("/api/triage","/api/ai/analyze") else "cases" if path.startswith("/api/cases") else "users" if path.startswith("/api/users/") else "integrations" if path=="/api/playbook/config" else "approve" if path.startswith("/api/playbook/actions/") else None
         if need and not can(sess,need):json_response(self,403,{"error":"Peran "+sess["role_name"]+" tidak punya izin untuk aksi ini"});return
         if path.startswith("/api/users/"):self.users_action(path.rsplit("/",1)[-1],body,sess);return
         if path=="/api/playbook/config":
@@ -1547,6 +1694,11 @@ class Handler(BaseHTTPRequestHandler):
             parts=path.split("/")
             if len(parts)!=6:json_response(self,404,{"error":"Tidak ditemukan"});return
             status,out=pb_decide(parts[4],parts[5],sess['user']);json_response(self,status,out);return
+        if path=="/api/sla":
+            try:targets=sla_validate(body.get("targets"))
+            except ValueError as exc:json_response(self,400,{"error":str(exc)});return
+            with db() as con:con.execute("INSERT INTO sla_cfg(k,v) VALUES('targets',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",(json.dumps(targets),))
+            audit("sla pengaturan","sla",json.dumps(targets)[:300],sess['user']);json_response(self,200,{"sla":sla_config()});return
         if path=="/api/ai/chat":
             status,out=ai_chat(sess['user'],body.get('messages'),str(body.get('view','')));json_response(self,status,out);return
         if path=="/api/ai/analyze":
@@ -1624,8 +1776,16 @@ class Handler(BaseHTTPRequestHandler):
             case_id=path.rsplit('/',1)[-1];status=str(body.get('status','')).strip();owner=str(body.get('owner','')).strip()[:120]
             if status not in CASE_STATES:json_response(self,400,{"error":"Invalid case status"});return
             with db() as con:
-                cur=con.execute("UPDATE cases SET status=?,owner=?,updated_at=? WHERE case_id=?",(status,owner,now_iso(),case_id))
-                if cur.rowcount==0:json_response(self,404,{"error":"Case not found"});return
+                old=con.execute("SELECT status,owner,first_response_at,resolved_at FROM cases WHERE case_id=?",(case_id,)).fetchone()
+                if not old:json_response(self,404,{"error":"Case not found"});return
+                now=now_iso()
+                first=old["first_response_at"] or (now if (status!="Open" or owner) else None)
+                resolved=(old["resolved_at"] or now) if status in CASE_DONE else None
+                con.execute("UPDATE cases SET status=?,owner=?,updated_at=?,first_response_at=?,resolved_at=? WHERE case_id=?",(status,owner,now,first,resolved,case_id))
+                changes=[]
+                if old["status"]!=status:changes.append("Status: %s -> %s"%(old["status"],status))
+                if (old["owner"] or "")!=owner:changes.append("Pemilik: %s -> %s"%(old["owner"] or "(kosong)",owner or "(kosong)"))
+                if changes:con.execute("INSERT INTO case_timeline(case_id,at,actor,action,details) VALUES(?,?,?,?,?)",(case_id,now,sess['user'],"Kasus diperbarui","; ".join(changes)))
             audit('case update',case_id,f'{status}; owner={owner}',sess['user']);json_response(self,200,{"ok":True});return
         self.send_error(404)
 

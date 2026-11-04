@@ -354,6 +354,18 @@ body::after {
 .chat-send { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border: 0; border-radius: 8px; background: var(--accent); color: #06101c; cursor: pointer; }
 .chat-send:disabled { background: var(--muted-bar); color: var(--muted); cursor: default; }
 .chat-foot { margin: 0 12px 10px; font-size: 11px; color: var(--muted); }
+#rp-print { display: none; }
+@media print {
+  body.print-report { background: #fff !important; }
+  body.print-report .app, body.print-report .chat-toggle, body.print-report .chat { display: none !important; }
+  body.print-report #rp-print { display: block; color: #000; background: #fff; padding: 12px 16px; font: 12px/1.45 var(--sans); }
+  body.print-report #rp-print h1 { font-size: 20px; margin: 0 0 4px; }
+  body.print-report #rp-print h2 { font-size: 14px; margin: 16px 0 6px; }
+  body.print-report #rp-print p { margin: 2px 0 6px; }
+  body.print-report #rp-print table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  body.print-report #rp-print th, body.print-report #rp-print td { border: 1px solid #999; padding: 3px 6px; text-align: left; font-size: 11px; }
+  body.print-report #rp-print .soc-num { text-align: right; }
+}
 .chat-toggle { position: fixed; right: 20px; bottom: 20px; z-index: 19; display: flex; align-items: center; gap: 8px; padding: 10px 16px; border: 0; border-radius: 999px; background: var(--accent); color: #06101c; font: inherit; font-weight: 600; cursor: pointer; box-shadow: var(--shadow); }
 .chat-toggle[hidden] { display: none; }
 @media (max-width: 1100px) {
@@ -776,6 +788,15 @@ body::after {
     <p class="soc-lede" id="im-lede">Memuat kasus…</p>
   </header>
 
+  <div class="soc-tiles">
+    <div class="soc-tile"><span class="soc-tile-label">Kasus terbuka</span><span class="soc-tile-value" id="im-t-open">—</span><span class="soc-tile-sub">belum Resolved/Closed</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">Melanggar SLA</span><span class="soc-tile-value" id="im-t-breach">—</span><span class="soc-tile-sub">kasus terbuka</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">Hampir melanggar</span><span class="soc-tile-value" id="im-t-risk">—</span><span class="soc-tile-sub">sisa 25% waktu atau kurang</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">MTTA, 30 hari</span><span class="soc-tile-value" id="im-t-mtta" style="font-size:1.3rem">—</span><span class="soc-tile-sub">rata-rata respons pertama</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">MTTR, 30 hari</span><span class="soc-tile-value" id="im-t-mttr" style="font-size:1.3rem">—</span><span class="soc-tile-sub">rata-rata sampai selesai</span></div>
+    <div class="soc-tile"><span class="soc-tile-label">Kepatuhan SLA, 30 hari</span><span class="soc-tile-value" id="im-t-comp" style="font-size:1.3rem">—</span><span class="soc-tile-sub" id="im-t-comp-sub">respons / penyelesaian</span></div>
+  </div>
+
   <div class="soc-grid">
     <section class="soc-card soc-wide">
       <h2>Kasus</h2>
@@ -789,6 +810,8 @@ body::after {
             <th class="soc-opt">Pemilik</th>
             <th class="soc-num">Alert</th>
             <th>Status</th>
+            <th>SLA respons</th>
+            <th>SLA selesai</th>
             <th class="soc-num soc-opt">Diperbarui</th>
           </tr></thead>
           <tbody id="tb-cases"></tbody>
@@ -813,6 +836,36 @@ body::after {
       </div>
       <div id="cs-alerts"></div>
       <ol class="timeline" id="tl-list"></ol>
+    </section>
+
+    <section class="soc-card soc-wide" id="rp-card" hidden>
+      <h2>Laporan kasus</h2>
+      <p class="soc-card-note">Ringkasan kasus yang dibuat dalam rentang waktu terpilih: jumlah, waktu respons (MTTA) dan penyelesaian (MTTR), kepatuhan SLA, dan kasus yang melanggar. Waktu dalam WIB.</p>
+      <div class="soc-tools">
+        <select id="rp-days" class="soc-select" aria-label="Rentang laporan">
+          <option value="7">7 hari</option><option value="30" selected>30 hari</option><option value="90">90 hari</option><option value="365">1 tahun</option>
+        </select>
+        <a class="soc-btn" id="rp-csv" href="api/cases/export.csv?days=30" download>Unduh CSV</a>
+        <button type="button" class="soc-btn" id="rp-print-btn">Cetak / simpan PDF</button>
+        <span class="soc-card-note" id="rp-msg" role="status"></span>
+      </div>
+      <div id="rp-body"></div>
+    </section>
+
+    <section class="soc-card soc-wide" id="sla-card" hidden>
+      <h2>Target SLA (administrator)</h2>
+      <p class="soc-card-note">Dalam menit (60 = 1 jam, 1440 = 1 hari). Respons dihitung dari kasus dibuat sampai status keluar dari Open atau pemilik diisi; penyelesaian sampai Resolved atau Closed. Perubahan berlaku untuk semua kasus, termasuk yang sudah ada.</p>
+      <div class="soc-tablewrap">
+        <table class="soc-table">
+          <thead><tr><th>Severity</th><th class="soc-num">Respons (menit)</th><th class="soc-num">Penyelesaian (menit)</th><th class="soc-opt">Setara</th></tr></thead>
+          <tbody id="tb-sla"></tbody>
+        </table>
+      </div>
+      <div class="soc-tools">
+        <button type="button" class="soc-btn primary" id="sla-save">Simpan target</button>
+        <button type="button" class="soc-btn" id="sla-reset">Isi nilai bawaan</button>
+        <span class="soc-card-note" id="sla-msg" role="status"></span>
+      </div>
     </section>
 
   </div>
@@ -1464,6 +1517,8 @@ body::after {
   <p class="chat-foot" id="chat-foot">Memeriksa ketersediaan AI…</p>
 </aside>
 </div>
+
+<div id="rp-print" aria-hidden="true"></div>
 
 <button type="button" class="chat-toggle" id="chat-toggle" aria-controls="chat" aria-expanded="false">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
@@ -2666,11 +2721,38 @@ $('ti-form').addEventListener('submit', (ev) => { ev.preventDefault(); lookup($(
 // ---- 5. Incident Management (kasus lokal dari api/cases) ----
 let selCase = '';
 
+const fmtMin = (m) => {
+  if (m == null) return '—';
+  m = Math.round(Math.abs(m));
+  if (m < 60) return m + ' mnt';
+  const h = Math.floor(m / 60);
+  if (h < 48) return h + ' j' + (m % 60 ? ' ' + (m % 60) + ' mnt' : '');
+  const d = Math.floor(h / 24);
+  return d + ' hr' + (h % 24 ? ' ' + (h % 24) + ' j' : '');
+};
+
+// Teks dan warna SLA satu kasus; kind = 'ack' (respons) atau 'res' (penyelesaian).
+function slaView(sla, kind) {
+  if (!sla) return {tone: 'tone-muted', text: '—', tip: ''};
+  const st = sla[kind + '_state'], used = sla[kind + '_minutes'], left = sla[kind + '_left'], target = sla[kind + '_target'];
+  const tip = 'Target ' + fmtMin(target) + (used != null ? ', terpakai ' + fmtMin(used) : '');
+  if (st === 'met') return {tone: 'tone-ok', text: 'Tercapai · ' + fmtMin(used), tip};
+  if (st === 'breached') return {tone: 'tone-bad', text: used != null ? 'Terlambat ' + fmtMin(used - target) : 'Lewat ' + fmtMin(left), tip};
+  if (st === 'at_risk') return {tone: 'tone-warn', text: 'Sisa ' + fmtMin(left), tip};
+  return {tone: 'tone-info', text: 'Sisa ' + fmtMin(left), tip};
+}
+
 function drawCases() {
-  const active = DATA.cases.filter((c) => c.status !== 'Closed' && c.status !== 'Resolved');
+  const isOpen = (c) => c.status !== 'Closed' && c.status !== 'Resolved';
+  const active = DATA.cases.filter(isOpen);
   $('im-lede').innerHTML = LIVE.on
     ? '<b>' + fmtInt(active.length) + '</b> kasus aktif dari <b>' + fmtInt(DATA.cases.length) + '</b> kasus lokal.'
     : 'Tidak ada data untuk ditampilkan.';
+  const breached = (c) => c.sla && (c.sla.ack_state === 'breached' || c.sla.res_state === 'breached');
+  const risky = (c) => c.sla && !breached(c) && (c.sla.ack_state === 'at_risk' || c.sla.res_state === 'at_risk');
+  $('im-t-open').textContent = LIVE.on ? fmtInt(active.length) : '—';
+  $('im-t-breach').textContent = LIVE.on ? fmtInt(active.filter(breached).length) : '—';
+  $('im-t-risk').textContent = LIVE.on ? fmtInt(active.filter(risky).length) : '—';
   const tb = $('tb-cases');
   tb.replaceChildren();
   DATA.cases.forEach((c) => {
@@ -2681,11 +2763,136 @@ function drawCases() {
     td(tr, c.owner || '—', 'soc-opt');
     td(tr, fmtInt(c.alert_count), 'soc-num');
     statusChip(tr, c.status);
+    ['ack', 'res'].forEach((k) => {
+      const v = slaView(c.sla, k);
+      const cell = chip(tr, v.text, v.tone);
+      cell.title = v.tip;
+    });
     td(tr, fmtTime(c.updated_at), 'soc-num soc-opt');
     tr.addEventListener('click', () => { selCase = c.case_id; drawCases(); drawTimeline(); });
   });
-  if (!DATA.cases.length) emptyRow(tb, 7, 'Belum ada kasus.');
+  if (!DATA.cases.length) emptyRow(tb, 9, 'Belum ada kasus.');
 }
+
+// ---- Laporan kasus dan target SLA ----
+const SLA_SEV = ['Critical', 'High', 'Medium', 'Low'];
+let REPORT = null;
+
+function reportDom(r, root, forPrint) {
+  const pct = (v) => (v == null ? '—' : v + '%');
+  const table = (heads, rows, nums) => {
+    const w = el('div', forPrint ? null : 'soc-tablewrap', null, root);
+    const t = el('table', forPrint ? null : 'soc-table', null, w);
+    const hr = el('tr', null, null, el('thead', null, null, t));
+    heads.forEach((h, i) => el('th', nums && nums.includes(i) ? 'soc-num' : null, h, hr));
+    const tbd = el('tbody', null, null, t);
+    rows.forEach((row) => { const tr = el('tr', null, null, tbd); row.forEach((v, i) => td(tr, String(v), nums && nums.includes(i) ? 'soc-num' : null)); });
+    if (!rows.length) emptyRow(tbd, heads.length, 'Tidak ada data.');
+  };
+  const t = r.totals;
+  el(forPrint ? 'p' : 'p', 'soc-card-note', 'Rentang: ' + r.days + ' hari terakhir. Dibuat ' + fmtTime(r.generated_at) + '. ' + fmtInt(t.created) + ' kasus dibuat, ' + fmtInt(t.resolved) + ' selesai, ' + fmtInt(r.open_now) + ' masih terbuka (' + fmtInt(r.breached_now) + ' melanggar SLA, ' + fmtInt(r.at_risk_now) + ' hampir melanggar).', root);
+  el('h3', 'detail-h', 'Per severity', root);
+  table(['Severity', 'Dibuat', 'Selesai', 'Terbuka', 'MTTA rata-rata', 'MTTA median', 'MTTR rata-rata', 'MTTR median', 'SLA respons', 'SLA selesai'],
+    r.by_severity.concat([r.totals]).map((x) => [x.severity, x.created, x.resolved, x.open, fmtMin(x.mtta_avg), fmtMin(x.mtta_median), fmtMin(x.mttr_avg), fmtMin(x.mttr_median), pct(x.ack_compliance), pct(x.res_compliance)]), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  el('h3', 'detail-h', 'Target SLA', root);
+  table(['Severity', 'Respons', 'Penyelesaian'], SLA_SEV.map((k) => [k, fmtMin(r.targets[k].ack), fmtMin(r.targets[k].res)]));
+  const st = Object.entries(r.by_status).map(([k, v]) => k + ': ' + v).join(' · ') || '—';
+  el('p', 'soc-card-note', 'Status kasus yang dibuat dalam rentang ini: ' + st + '. Umur kasus terbuka: ' + Object.entries(r.aging).map(([k, v]) => k + ' ' + v).join(' · ') + '.', root);
+  el('h3', 'detail-h', 'Kasus yang melanggar SLA', root);
+  table(['Kasus', 'Judul', 'Severity', 'Status', 'Pemilik', 'SLA', 'Lewat'], r.breached.map((x) => [x.case_id, x.title, x.severity, x.status, x.owner || '—', x.sla, fmtMin(x.over_minutes)]));
+  el('h3', 'detail-h', 'Per pemilik', root);
+  table(['Pemilik', 'Dibuat', 'Masih terbuka'], r.by_owner.map((x) => [x.owner, x.created, x.open]), [1, 2]);
+}
+
+function drawReport() {
+  const card = $('rp-card');
+  card.hidden = !hasPerm('cases');
+  const body = $('rp-body');
+  body.replaceChildren();
+  if (!REPORT) { el('p', 'soc-card-note', 'Memuat laporan…', body); return; }
+  reportDom(REPORT, body, false);
+  const t = REPORT.totals;
+  $('im-t-mtta').textContent = REPORT.days === 30 ? fmtMin(t.mtta_avg) : $('im-t-mtta').textContent;
+  $('rp-csv').href = 'api/cases/export.csv?days=' + REPORT.days;
+}
+
+async function loadReport(days) {
+  if (!hasPerm('cases')) { $('rp-card').hidden = true; return; }
+  try {
+    const r = await getJson('api/cases/report?days=' + (days || $('rp-days').value));
+    REPORT = r;
+    if (r.days === 30) {
+      const t = r.totals;
+      $('im-t-mtta').textContent = fmtMin(t.mtta_avg);
+      $('im-t-mttr').textContent = fmtMin(t.mttr_avg);
+      const pct = (v) => (v == null ? '—' : v + '%');
+      $('im-t-comp').textContent = pct(t.ack_compliance) + ' / ' + pct(t.res_compliance);
+    }
+    $('rp-msg').textContent = '';
+    drawReport();
+  } catch (e) { $('rp-msg').textContent = 'Tidak bisa memuat laporan: ' + (e.message || e); }
+}
+$('rp-days').addEventListener('change', () => { REPORT = null; drawReport(); loadReport(); });
+$('rp-print-btn').addEventListener('click', () => {
+  if (!REPORT) return;
+  const root = $('rp-print');
+  root.replaceChildren();
+  el('h1', null, 'Laporan kasus Beruk Sakti', root);
+  reportDom(REPORT, root, true);
+  document.body.classList.add('print-report');
+  const done = () => { document.body.classList.remove('print-report'); root.replaceChildren(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
+});
+
+function drawSlaForm(cfg, defaults, keepEdits) {
+  const card = $('sla-card');
+  card.hidden = !hasPerm('integrations');
+  if (card.hidden) return;
+  const tb = $('tb-sla');
+  if (keepEdits && tb.children.length) return;
+  tb.replaceChildren();
+  SLA_SEV.forEach((k) => {
+    const tr = el('tr', null, null, tb);
+    td(tr, k);
+    ['ack', 'res'].forEach((f) => {
+      const c = td(tr, null, 'soc-num');
+      const inp = el('input', 'soc-search', null, c);
+      inp.type = 'number'; inp.min = '1'; inp.max = '525600'; inp.style.width = '8rem';
+      inp.id = 'sla-' + k + '-' + f; inp.value = cfg[k][f]; inp.dataset.def = defaults[k][f];
+      inp.setAttribute('aria-label', 'Target ' + (f === 'ack' ? 'respons' : 'penyelesaian') + ' ' + k + ' (menit)');
+      inp.addEventListener('input', () => { eq.textContent = SLA_SEV.length ? fmtMin(Number($('sla-' + k + '-ack').value)) + ' / ' + fmtMin(Number($('sla-' + k + '-res').value)) : ''; });
+    });
+    const eq = td(tr, fmtMin(cfg[k].ack) + ' / ' + fmtMin(cfg[k].res), 'soc-opt');
+  });
+}
+$('sla-reset').addEventListener('click', () => {
+  SLA_SEV.forEach((k) => ['ack', 'res'].forEach((f) => { const i = $('sla-' + k + '-' + f); i.value = i.dataset.def; i.dispatchEvent(new Event('input')); }));
+});
+$('sla-save').addEventListener('click', async () => {
+  const targets = {};
+  SLA_SEV.forEach((k) => { targets[k] = {ack: $('sla-' + k + '-ack').value, res: $('sla-' + k + '-res').value}; });
+  const m = $('sla-msg');
+  m.textContent = 'Menyimpan…';
+  try {
+    const r = await postJson('api/sla', {targets});
+    DATA.sla = r.sla;
+    m.textContent = 'Target tersimpan.';
+    await refreshIncidents();
+    loadReport();
+  } catch (e) { m.textContent = e.message; }
+});
+
+async function refreshIncidents() {
+  try {
+    const cs = await getJson('api/cases');
+    DATA.cases = cs.cases || [];
+    DATA.sla = cs.sla; DATA.slaDef = cs.sla_defaults;
+  } catch (e) { return; }
+  drawCases();
+  if (DATA.sla) drawSlaForm(DATA.sla, DATA.slaDef || DATA.sla, true);
+}
+setInterval(() => { if (!$('view-incidents').hidden) { refreshIncidents(); if (selCase) drawTimeline(); } }, 30000);
 
 async function drawTimeline() {
   const card = $('tl-card');
@@ -2697,7 +2904,8 @@ async function drawTimeline() {
   $('tl-note').textContent = 'Memuat…';
   try {
     const c = await getJson('api/cases/' + encodeURIComponent(selCase));
-    $('tl-note').textContent = c.title + '. Pemilik: ' + (c.owner || '—') + '. ' + c.summary + ' Waktu dalam WIB (UTC+7).';
+    const sl = c.sla ? ' SLA respons: ' + slaView(c.sla, 'ack').text + ' (target ' + fmtMin(c.sla.ack_target) + '); SLA selesai: ' + slaView(c.sla, 'res').text + ' (target ' + fmtMin(c.sla.res_target) + ').' : '';
+    $('tl-note').textContent = c.title + '. Pemilik: ' + (c.owner || '—') + '. ' + c.summary + ' ·' + sl + ' Waktu dalam WIB (UTC+7).';
     c.timeline.forEach((e) => {
       const li = el('li', null, null, ol);
       el('span', 'tl-meta', fmtTime(e.at) + ' · ' + e.actor, li);
@@ -3482,6 +3690,7 @@ function showView(want) {
   const v = VIEWS.includes(h) && (h !== 'admin' || canAdminPage()) ? h : 'overview';
   if (v === 'fail2ban') refreshF2b();
   if (v === 'suricata') refreshSuri();
+  if (v === 'incidents') { refreshIncidents(); loadReport(); }
   if (v === 'admin') { refreshAiUsage(); refreshAudit(); gateAdmin(); }
   if (v === 'automation') refreshPlaybook();
   VIEWS.forEach((k) => { $('view-' + k).hidden = k !== v; });
