@@ -929,6 +929,16 @@ PB_EVAL_INTERVAL=int(os.environ.get("PLAYBOOK_EVAL_INTERVAL","20"))
 PB_MODES=("off","dry-run","approval","auto")
 PB_DEFAULTS={"mode":"dry-run","min_level":8,"min_alerts":5,"window_min":10,"agents":["VM-11-51-ubuntu"],"min_abuse_score":0,"max_per_hour":10,"suricata":True,"suricata_min_alerts":3,"rep_mode":"dry-run","rep_min_score":100,"rep_window_min":60,"rep_min_level":3}
 PB_BLOCKING=("proposed","approved","executing","banned","rejected","unbanned")
+PB_MAX_PENDING=50
+
+def pb_made(con,status,now):
+    """Hitungan untuk batas: simulasi dihitung sendiri; usulan dibatasi jumlah yang menunggu (bukan per jam); batas per jam hanya untuk ban otomatis
+    (aksi yang dibuat playbook sendiri), jadi usulan dan persetujuan manual tidak menghabiskan jatah ban otomatis."""
+    if status=="dry-run":
+        return con.execute("SELECT count(*) FROM playbook_actions WHERE at>? AND status='dry-run'",(now-3600,)).fetchone()[0]
+    if status=="proposed":
+        return con.execute("SELECT count(*) FROM playbook_actions WHERE status='proposed'").fetchone()[0]
+    return con.execute("SELECT count(*) FROM playbook_actions WHERE at>? AND status IN ('approved','executing','banned','failed','unbanned','expired') AND decided_by LIKE 'playbook%'",(now-3600,)).fetchone()[0]
 
 def pb_config():
     cfg=dict(PB_DEFAULTS)
@@ -945,7 +955,7 @@ def pb_validate(body):
     if "mode" in body:
         if body["mode"] not in PB_MODES:raise ValueError("Mode tidak dikenal")
         out["mode"]=body["mode"]
-    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(1,100),"suricata_min_alerts":(1,1000),"rep_min_score":(50,100),"rep_window_min":(1,1440),"rep_min_level":(3,15)}.items():
+    for k,(lo,hi) in {"min_level":(8,15),"min_alerts":(1,1000),"window_min":(1,1440),"min_abuse_score":(0,100),"max_per_hour":(0,100000),"suricata_min_alerts":(1,1000),"rep_min_score":(50,100),"rep_window_min":(1,1440),"rep_min_level":(3,15)}.items():
         if k in body:
             try:v=int(body[k])
             except (TypeError,ValueError):raise ValueError(k+" harus berupa angka")
@@ -1041,7 +1051,7 @@ def pb_evaluate_rep(cfg):
     wide=dict(cfg,min_alerts=1,suricata_min_alerts=1,window_min=cfg["rep_window_min"],min_level=cfg["rep_min_level"],agents=[])
     cands=[]
     with db() as con:
-        made=con.execute("SELECT count(*) FROM playbook_actions WHERE at>? AND (status='dry-run')=?",(now-3600,int(status=="dry-run"))).fetchone()[0]
+        made=pb_made(con,status,now)
         for b in pb_candidates(wide):
             ip=str(b["key"])
             if pb_protected(ip,pol) or ip in banned:continue
@@ -1050,7 +1060,7 @@ def pb_evaluate_rep(cfg):
             cands.append(b)
     budget=10;rows=[]
     for b in sorted(cands,key=lambda x:-x["doc_count"]):
-        if made+len(rows)>=cfg["max_per_hour"]:break
+        if made+len(rows)>=(PB_MAX_PENDING if status=="proposed" else (cfg["max_per_hour"] or 10**9)):break
         ip=str(b["key"]);ab=abuse_check(ip,fetch=False)
         if ab.get("status")!="ok" and budget>0:budget-=1;ab=abuse_check(ip)
         if ab.get("status")!="ok" or ab.get("score",0)<cfg["rep_min_score"]:continue
@@ -1069,7 +1079,7 @@ def pb_evaluate(cfg):
     pol=pb_policy();banned,_,_=pb_banned();now=time.time();status={"dry-run":"dry-run","approval":"proposed","auto":"approved"}[cfg["mode"]]
     cands=[]
     with db() as con:
-        made=con.execute("SELECT count(*) FROM playbook_actions WHERE at>? AND (status='dry-run')=?",(now-3600,int(status=="dry-run"))).fetchone()[0]
+        made=pb_made(con,status,now)
         for b in pb_candidates(cfg):
             ip=str(b["key"])
             if pb_protected(ip,pol) or ip in banned:continue
@@ -1078,7 +1088,7 @@ def pb_evaluate(cfg):
             cands.append(b)
     budget=10;rows=[]
     for b in cands:
-        if made+len(rows)>=cfg["max_per_hour"]:break
+        if made+len(rows)>=(PB_MAX_PENDING if status=="proposed" else (cfg["max_per_hour"] or 10**9)):break
         ip=str(b["key"]);ab=abuse_check(ip,fetch=False)
         if budget>0 and (ab.get("status")!="ok" or "categories" not in ab):
             budget-=1;ab=abuse_check(ip,force=True)

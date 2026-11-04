@@ -867,7 +867,7 @@ body::after {
           <input id="pb-agents" class="soc-search" type="text" placeholder="Agen yang dipantau, pisahkan dengan koma" aria-label="Agen yang dipantau">
           <label class="soc-card-note">skor AbuseIPDB min <input id="pb-abuse" class="soc-search" type="number" min="0" max="100" style="width:5rem;flex:none" aria-label="Skor AbuseIPDB minimum"> (0 = tidak dipakai)</label>
           <label class="soc-card-note"><input id="pb-suri" type="checkbox"> hitung alert Suricata yang masuk ke server, minimal <input id="pb-suri-n" class="soc-search" type="number" min="1" max="1000" style="width:5rem;flex:none" aria-label="Minimal alert Suricata"> alert</label>
-          <label class="soc-card-note">maks usulan/jam <input id="pb-max" class="soc-search" type="number" min="1" max="100" style="width:5rem;flex:none" aria-label="Maksimal usulan per jam"></label>
+          <label class="soc-card-note" title="Batas ban otomatis per jam; 0 = tanpa batas. Pembantu root tetap punya batasnya sendiri (ban per jam dan total ban aktif). Usulan yang menunggu persetujuan dibatasi 50 dan tidak memakai jatah ini.">maks ban otomatis/jam (0 = tanpa batas) <input id="pb-max" class="soc-search" type="number" min="0" max="100000" style="width:5rem;flex:none" aria-label="Maksimal ban otomatis per jam"></label>
           <label class="soc-card-note">aturan reputasi AbuseIPDB
             <select id="pb-rep-mode" class="soc-select" aria-label="Mode aturan reputasi AbuseIPDB">
               <option value="off">Mati</option>
